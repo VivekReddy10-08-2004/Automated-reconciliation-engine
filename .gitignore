@@ -1,0 +1,14 @@
+# Environment / secrets
+project.env
+.env
+.env.*
+!.env.example
+.venv/
+alpacca_Recovery_Code.txt
+local_docs/
+.agents/
+.codex/
+
+# Python
+__pycache__/
+*.pyc

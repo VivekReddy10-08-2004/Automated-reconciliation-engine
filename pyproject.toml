@@ -1,0 +1,23 @@
+[project]
+name = "financial-reconciliation-engine"
+version = "0.1.0"
+description = "Automated Financial Data Ingestion & Reconciliation Engine"
+requires-python = ">=3.10"
+dependencies = [
+    "pyzmq",
+    "websockets",
+    "scikit-learn",
+    "yfinance",
+    "alpaca-py",
+    "python-dotenv",
+    "pandas",
+    "numpy",
+    "SQLAlchemy",
+    "requests",
+    "duckdb",
+    "dbt-duckdb",
+    "apache-airflow",
+]
+
+[tool.uv]
+package = false

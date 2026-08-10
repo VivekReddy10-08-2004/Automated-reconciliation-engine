@@ -1,0 +1,14 @@
+pyzmq
+websockets
+scikit-learn
+yfinance
+alpaca-py
+python-dotenv
+pandas
+numpy
+SQLAlchemy
+requests
+duckdb
+dbt-duckdb
+apache-airflow
+rich
