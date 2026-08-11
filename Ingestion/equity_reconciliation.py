@@ -28,7 +28,8 @@ def reconcile_equity_bars(
     """
     yahoo_bars = yahoo_bars.copy()
     alpaca_bars = alpaca_bars.copy()
-
+    validate_equity_bars(yahoo_bars)
+    validate_equity_bars(alpaca_bars)
     yahoo_bars["trade_date"] = pd.to_datetime(yahoo_bars["trade_date"]).dt.date
     alpaca_bars["trade_date"] = pd.to_datetime(alpaca_bars["trade_date"]).dt.date
 
@@ -53,6 +54,13 @@ def reconcile_equity_bars(
     merged.loc[merged["close_difference"].abs() > close_tolerance, "status"] = "BREAK"
 
     return merged[RECONCILIATION_COLUMNS]
+
+def validate_equity_bars(df: pd.DataFrame) -> bool:
+    required_columns = ["symbol", "trade_date", "open", "high", "low", "close", "volume"]
+    if list(df.columns) != required_columns:
+        raise ValueError(f"DataFrame must contain the following columns: {required_columns}")    
+    return True
+
 
 if __name__ == "__main__":
     yahoo_bars = fetch_yahoo_bars("AAPL", period="5d", interval="1d")
