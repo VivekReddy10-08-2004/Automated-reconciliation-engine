@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from alpaca.data.historical.stock import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
+from alpaca.data.enums import DataFeed
 from alpaca.data.timeframe import TimeFrame
 import pandas as pd
 
@@ -35,6 +36,7 @@ def fetch_stock_bars(symbol: str, start_date: datetime, end_date: datetime, time
     request_params = StockBarsRequest(
         symbol_or_symbols=symbol,
         timeframe=timeframe,
+        feed=DataFeed.IEX,
         start=start_date,
         end=end_date
     )
