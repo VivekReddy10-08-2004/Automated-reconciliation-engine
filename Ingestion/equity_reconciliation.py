@@ -68,10 +68,16 @@ def reconcile_equity_bars(
         "volume_yahoo": "yahoo_volume",
         "volume_alpaca": "alpaca_volume",
     })
+
+    
     merged["close_difference"] = merged["yahoo_close"] - merged["alpaca_close"]
     merged["volume_difference"] = merged["yahoo_volume"] - merged["alpaca_volume"]
     merged["status"] = "MATCH"
-    merged.loc[merged["close_difference"].abs() > close_tolerance, "status"] = "BREAK"
+    merged.loc[
+        (merged["close_difference"].abs() > close_tolerance)
+        | merged["close_difference"].isna(),
+        "status",
+    ] = "BREAK"
 
     return merged[RECONCILIATION_COLUMNS]
 

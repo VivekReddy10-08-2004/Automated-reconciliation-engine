@@ -1,5 +1,5 @@
-import pandas as pd
 import duckdb
+import pandas as pd
 
 def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
     with duckdb.connect(db_path) as conn:
@@ -55,6 +55,26 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
                 PRIMARY KEY (run_id, symbol, timestamp, metric_name)
             )
         """
+        )
+
+        #create exceptions table
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS equity_exceptions (
+                exception_id VARCHAR PRIMARY KEY,
+                run_id VARCHAR,
+                instrument_type VARCHAR,
+                symbol VARCHAR,
+                trade_date DATE,
+                yahoo_close DOUBLE,
+                alpaca_close DOUBLE,
+                close_difference DOUBLE,
+                severity VARCHAR,
+                status VARCHAR,
+                created_at TIMESTAMP,
+                FOREIGN KEY (run_id) REFERENCES pipeline_runs(run_id)
+            )
+            """
         )
 def save_pipeline_run(
     run_id: str,
@@ -177,7 +197,6 @@ def save_reconciliation_results(
                 row["status"] == "BREAK",
             ),
         ])
-
     with duckdb.connect(db_path) as conn:
         conn.executemany(
             """
@@ -195,4 +214,27 @@ def save_reconciliation_results(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             results
+        )
+
+def save_exceptions(df: pd.DataFrame, db_path: str = "reconciliation.duckdb") -> None:
+    with duckdb.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO equity_exceptions
+            (
+                exception_id,
+                run_id,
+                instrument_type,
+                symbol,
+                trade_date,
+                yahoo_close,
+                alpaca_close,
+                close_difference,
+                severity,
+                status,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            df.values.tolist()
         )
