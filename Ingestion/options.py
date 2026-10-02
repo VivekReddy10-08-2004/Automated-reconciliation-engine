@@ -1,42 +1,91 @@
-import os 
-from dotenv import load_dotenv 
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+import os
+from collections.abc import Mapping
+from datetime import date, datetime, timezone
+
+import pandas as pd
 from alpaca.data.historical.option import OptionHistoricalDataClient
-from alpaca.data.requests import OptionBarsRequest, OptionChainRequest
-from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+from alpaca.data.requests import OptionChainRequest
+from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv("project.env")
+OPTIONS_COLUMNS = [
+    "underlying",
+    "expiry",
+    "strike",
+    "option_type",
+    "contract_symbol",
+    "trade_date",
+    "close",
+    "bid",
+    "ask",
+    "volume",
+    "open_interest",
+]
 
-api_key = os.getenv("ALPACA_API_KEY")
-secret_key = os.getenv("ALPACA_SECRET_KEY")
 
-#Initializing the options client
-client = OptionHistoricalDataClient(api_key, secret_key)
+def _value(source: object, name: str, default: object = None) -> object:
+    if isinstance(source, Mapping):
+        return source.get(name, default)
+    return getattr(source, name, default)
 
-#Setting timezone awarenes dates
-now = datetime.now()
-start_date = now - timedelta(days=5) # we define start_date 5 days ago
 
-request_params = OptionBarsRequest(
-    symbol_or_symbols= "SPY241220C00500000",
-    timeframe=TimeFrame(1, TimeFrameUnit.Hour), # 1 hour bars
-    start= start_date,
-    end= now
-)
-#Fetching the data
-option_bars = client.get_option_bars(request_params)
-options_chain_request = OptionChainRequest(
-    underlying_symbol="SPY",
-    expiration_dates=[datetime(2026, 12, 20)]
-)
+def _contract_details(contract_symbol: str) -> tuple[str, float, str]:
+    """Read expiration, strike, and type from an OCC option symbol."""
+    if len(contract_symbol) < 15:
+        raise ValueError(f"Invalid OCC option symbol: {contract_symbol}")
 
-#Converting the data to a DataFrame
-option_df_bars = option_bars.df
+    option_type = contract_symbol[12]
+    strike = int(contract_symbol[13:]) / 1000
+    expiry = date.fromisoformat(
+        f"20{contract_symbol[6:8]}-{contract_symbol[8:10]}-{contract_symbol[10:12]}"
+    ).isoformat()
+    return expiry, strike, option_type
 
-if __name__ == "__main__":
-    print(option_df_bars)
-    chain_dict = client.get_option_chain(options_chain_request)
-    print(chain_dict)
 
+def fetch_alpaca_option_chain(
+    underlying: str,
+    expiration: str,
+) -> pd.DataFrame:
+    """Fetch and normalize one Alpaca option chain expiration."""
+    load_dotenv("project.env")
+    api_key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID")
+    secret_key = os.getenv("ALPACA_SECRET_KEY") or os.getenv("APCA_API_SECRET_KEY")
+
+    if not api_key or not secret_key:
+        raise RuntimeError("Alpaca API credentials are not configured")
+
+    expiration_date = date.fromisoformat(expiration)
+    client = OptionHistoricalDataClient(api_key, secret_key)
+    request = OptionChainRequest(
+        underlying_symbol=underlying,
+        expiration_dates=[expiration_date],
+    )
+    chain = client.get_option_chain(request)
+
+    rows: list[dict[str, object]] = []
+    trade_date = datetime.now(timezone.utc).date()
+    for contract_symbol, snapshot in (chain or {}).items():
+        try:
+            expiry, strike, option_type = _contract_details(contract_symbol)
+        except (TypeError, ValueError):
+            continue
+
+        latest_trade = _value(snapshot, "latest_trade", {})
+        latest_quote = _value(snapshot, "latest_quote", {})
+        daily_bar = _value(snapshot, "daily_bar", {})
+        rows.append(
+            {
+                "underlying": underlying,
+                "expiry": expiry,
+                "strike": strike,
+                "option_type": option_type,
+                "contract_symbol": contract_symbol,
+                "trade_date": trade_date,
+                "close": _value(latest_trade, "price"),
+                "bid": _value(latest_quote, "bid_price"),
+                "ask": _value(latest_quote, "ask_price"),
+                "volume": _value(daily_bar, "volume"),
+                "open_interest": _value(snapshot, "open_interest"),
+            }
+        )
+
+    return pd.DataFrame(rows, columns=OPTIONS_COLUMNS)
