@@ -29,6 +29,12 @@ def reconcile_option_chain(
     alpaca_options: pd.DataFrame,
     close_tolerance: float = 0.05,
 ) -> pd.DataFrame:
+    # An unavailable provider is not a MATCH or a BREAK. There is no valid
+    # cross-vendor comparison to make, so preserve the output contract and let
+    # the calling report explain why the result is empty.
+    if yahoo_options.empty or alpaca_options.empty:
+        return pd.DataFrame(columns=OUTPUT_COLUMNS)
+
     yahoo = yahoo_options[
         MATCH_COLUMNS + ["contract_symbol", "close", "bid", "ask"]
     ].copy()
