@@ -85,6 +85,20 @@ flowchart TD
   - top 5 largest breaks
 - Write final run metrics and end status.
 
+### Phase G - Security + Operator Analytics
+- Load provider keys from a secret store (owner-only local file for the MVP); never persist or log secret values.
+- Encrypt data in transit and at rest, with role-based access to raw and trade-level evidence.
+- Keep an immutable audit event for rule changes, exception transitions, exports, and administrative access.
+- Apply explicit retention to raw payloads, results, exceptions, logs, and backups.
+- Expose a read-only dashboard with break-rate trends, largest mismatches, repeat offenders, and exception counts; add aging and SLA views when their fields are persisted.
+- Mask counterparty, account, and other sensitive identifiers in dashboards and notifications.
+
+The implemented MVP dashboard currently supports the latest run, largest
+mismatches (including missing observations), break-rate history, repeat
+offenders, and exception counts. Aging, ownership, SLA, provider, rule, and
+instrument-type cuts require the expanded exception and reconciliation schemas
+described below.
+
 ---
 
 ## 4) Suggested Data Model (Minimal)
@@ -158,6 +172,15 @@ flowchart TD
 - `owner`, `created_ts`, `resolved_ts`
 - `reason_code`, `notes`
 
+### `audit_events` (deployment target)
+- `event_id`, `event_ts`, `actor_id`, `actor_role`
+- `event_type` (`RULE_CHANGE`, `EXCEPTION_CHANGE`, `EXPORT`, `ADMIN_ACCESS`)
+- `run_id`, `exception_id`, `resource_type`, `resource_id`
+- `before_state_hash`, `after_state_hash`, `correlation_id`
+
+The operator dashboard should query curated views over these tables. It must not
+receive write privileges or direct access to credentials and raw payloads.
+
 ---
 
 ## 5) Operational Rules (What Recruiters Like)
@@ -166,6 +189,8 @@ flowchart TD
 - **Idempotent rerun**: re-running same day should not duplicate records.
 - **RTO target**: pipeline completes in e.g., < 10 minutes.
 - **Auditability**: every alert ties back to stored recon evidence.
+- **Least privilege**: ingestion writes data; dashboards and routine operators read curated views only.
+- **Data minimization**: alerts and dashboards show only the fields needed to investigate a break.
 
 ---
 
@@ -195,7 +220,19 @@ If you can demo this live with 5-10 tickers, you are strongly aligned with Trade
 3. Add Telegram alerting for breaks/failures.
 4. Add daily scheduler (local task scheduler or GitHub Actions).
 
+### Control-room and security increment
+1. Render latest-run KPIs, largest mismatches, trends, repeat offenders, and exception counts from DuckDB in read-only mode. **Implemented for equities.**
+2. Enforce owner-only local permissions and lazy secret loading. **Implemented for the local MVP.**
+3. Add exception owner, age, resolution timestamp, and SLA fields; extend analytics by provider, instrument, and rule.
+4. Replace local secrets with managed secrets; add RBAC, encryption at rest, retention jobs, masked views, and immutable audit events before shared deployment.
+
 ---
 
 ## 8) Interview Story (30 seconds)
-"I built a daily control pipeline that ingests market data from two vendors, reconciles key fields with threshold-based break detection, and creates auditable exceptions with real-time alerts. The project mirrors how Trade Ops teams prevent bad data from flowing into downstream booking, settlement, and reporting processes."
+"I built a daily control pipeline that ingests market data from two vendors,
+reconciles key fields with threshold-based break detection, and creates
+auditable exceptions. A read-only control-room dashboard shows the largest
+mismatches, missing observations, break trends, and recurring failures, while
+least-privilege and secret-handling controls protect the data path. The project
+mirrors how Trade Ops teams prevent bad data from flowing into downstream
+booking, settlement, and reporting processes."

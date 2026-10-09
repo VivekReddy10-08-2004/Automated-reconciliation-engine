@@ -1,6 +1,8 @@
 import duckdb
 import pandas as pd
 
+from security import restrict_file_permissions
+
 def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
     with duckdb.connect(db_path) as conn:
 
@@ -76,6 +78,8 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
             )
             """
         )
+    restrict_file_permissions(db_path)
+
 def save_pipeline_run(
     run_id: str,
     started_at: str,

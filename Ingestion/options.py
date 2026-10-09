@@ -1,11 +1,11 @@
-import os
 from collections.abc import Mapping
 from datetime import date, datetime, timezone
 
 import pandas as pd
 from alpaca.data.historical.option import OptionHistoricalDataClient
 from alpaca.data.requests import OptionChainRequest
-from dotenv import load_dotenv
+
+from security import load_alpaca_credentials
 
 OPTIONS_COLUMNS = [
     "underlying",
@@ -46,12 +46,7 @@ def fetch_alpaca_option_chain(
     expiration: str,
 ) -> pd.DataFrame:
     """Fetch and normalize one Alpaca option chain expiration."""
-    load_dotenv("project.env")
-    api_key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID")
-    secret_key = os.getenv("ALPACA_SECRET_KEY") or os.getenv("APCA_API_SECRET_KEY")
-
-    if not api_key or not secret_key:
-        raise RuntimeError("Alpaca API credentials are not configured")
+    api_key, secret_key = load_alpaca_credentials()
 
     expiration_date = date.fromisoformat(expiration)
     client = OptionHistoricalDataClient(api_key, secret_key)

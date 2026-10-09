@@ -1,11 +1,11 @@
-import os 
-from dotenv import load_dotenv 
 from datetime import datetime, timedelta, timezone
 from alpaca.data.historical.stock import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.enums import DataFeed
 from alpaca.data.timeframe import TimeFrame
 import pandas as pd
+
+from security import load_alpaca_credentials
 
 EQUITY_COLUMNS = [
     "symbol",
@@ -17,22 +17,16 @@ EQUITY_COLUMNS = [
     "volume",
 ]
 
-load_dotenv("project.env")
-
-api_key = os.getenv("ALPACA_API_KEY")
-secret_key = os.getenv("ALPACA_SECRET_KEY")
-
 #Notes:
 """ Check in yf file if the period and interval are native to yfinance. 
 If not, we need to convert them to the appropriate TimeFrame and TimeFrameUnit for Alpaca.
 """
-# Initializing the client
-client = StockHistoricalDataClient(api_key, secret_key)
-
 def fetch_stock_bars(symbol: str, start_date: datetime, end_date: datetime, timeframe: TimeFrame) -> pd.DataFrame:
     """
     Fetch historical stock bars for a given symbol and time range.
     """
+    api_key, secret_key = load_alpaca_credentials()
+    client = StockHistoricalDataClient(api_key, secret_key)
     request_params = StockBarsRequest(
         symbol_or_symbols=symbol,
         timeframe=timeframe,

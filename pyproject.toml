@@ -17,6 +17,7 @@ dependencies = [
     "duckdb",
     "dbt-duckdb",
     "apache-airflow",
+    "rich",
 ]
 
 [tool.uv]
