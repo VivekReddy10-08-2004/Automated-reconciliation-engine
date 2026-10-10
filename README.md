@@ -11,6 +11,7 @@ A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes 
 - Equity reconciliation report with Yahoo/Alpaca close and volume differences
 - Offline-tested Yahoo/Alpaca option reconciliation by full contract identity
 - `MATCH` / `BREAK` status using a configurable close-price tolerance
+- Immutable raw and normalized Parquet archives partitioned by source and run ID
 - Read-only DuckDB dashboard for latest breaks and operational analytics
 - Private local secret/database permissions and lazy credential loading
 
@@ -21,10 +22,26 @@ A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes 
 3. Run the reconciliation demo from the project root:
 
 ```powershell
-python -m Ingestion.equity_reconciliation
+python run_equity_reconciliation.py
 ```
 
-The script compares recent daily AAPL bars and prints the reconciliation result plus the number of price breaks.
+The command compares recent daily AAPL bars, saves the audit trail to DuckDB,
+and archives Yahoo, Alpaca, and reconciliation data under `data/`. Each archive
+contains its `run_id` and an existing run file is never overwritten.
+
+Replay a saved run without calling Yahoo or Alpaca:
+
+```powershell
+python run_equity_reconciliation.py --replay-run-id <run-id>
+```
+
+Provider files use this layout:
+
+```text
+data/raw/<SOURCE>/equities/run_id=<run-id>/payload.parquet
+data/normalized/<SOURCE>/equities/run_id=<run-id>/data.parquet
+data/reconciliation/equities/run_id=<run-id>/results.parquet
+```
 
 Run the offline reconciliation tests without API credentials or network access:
 
@@ -80,6 +97,8 @@ Ingestion/Equities.py               Alpaca equity ingestion and normalization
 Ingestion/equity_reconciliation.py  Yahoo vs. Alpaca equity comparison
 Ingestion/options_reconciliation.py Yahoo vs. Alpaca option comparison logic
 Dashboard/dashboard.py              Read-only break analytics dashboard
+data_lake.py                         Immutable Parquet archive and replay helpers
+run_equity_reconciliation.py         Live run and offline replay commands
 security.py                         Local secret and file-permission controls
 ```
 

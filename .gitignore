@@ -18,6 +18,7 @@ secrets*.json
 token*.json
 
 # Local databases and generated data
+/data/
 *.duckdb*
 *.db
 *.db-shm

@@ -24,7 +24,10 @@ class RunFailureHandlingTests(unittest.TestCase):
                 with patch.multiple(
                     run_equity_reconciliation,
                     initialize_database=DEFAULT,
-                    reconciliation=DEFAULT,
+                    fetch_equity_sources=DEFAULT,
+                    archive_equity_source=DEFAULT,
+                    reconcile_equity_bars=DEFAULT,
+                    archive_reconciliation_results=DEFAULT,
                     save_pipeline_run=DEFAULT,
                     save_equity_bars=DEFAULT,
                     save_reconciliation_results=DEFAULT,
@@ -32,7 +35,9 @@ class RunFailureHandlingTests(unittest.TestCase):
                     save_exceptions=DEFAULT,
                     send_run_notification=DEFAULT,
                 ) as mocks, patch("builtins.print"):
-                    mocks["reconciliation"].return_value = (source, source, result)
+                    mocks["fetch_equity_sources"].return_value = (source, source)
+                    mocks["archive_equity_source"].side_effect = [source, source]
+                    mocks["reconcile_equity_bars"].return_value = result
                     mocks["create_equity_exceptions"].return_value = pd.DataFrame()
 
                     summary = run_equity_reconciliation.main("test.duckdb")

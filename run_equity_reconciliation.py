@@ -1,10 +1,19 @@
+import argparse
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
 
 import pandas as pd
 
 from alpaca.data.timeframe import TimeFrame
 
+from data_lake import (
+    EQUITY_COLUMNS,
+    EQUITY_INSTRUMENT,
+    archive_equity_source,
+    archive_reconciliation_results,
+    read_dataframe,
+)
 from exception import create_equity_exceptions
 from Ingestion.Equities import fetch_stock_bars
 from Ingestion.Equities_yf import fetch_equity_bars as fetch_yahoo_bars
@@ -19,25 +28,86 @@ from Storage.storage import (
 )
 
 
-def reconciliation() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def fetch_equity_sources() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Fetch the two provider datasets used by the daily equity control."""
     start = datetime.now(timezone.utc) - timedelta(days=5)
     end = datetime.now(timezone.utc)
 
     yahoo_bars = fetch_yahoo_bars("AAPL", period="5d", interval="1d")
     alpaca_bars = fetch_stock_bars("AAPL", start, end, TimeFrame.Day)
+    return yahoo_bars, alpaca_bars
+
+
+def reconciliation() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Fetch and reconcile data without persistence (kept for library callers)."""
+    yahoo_bars, alpaca_bars = fetch_equity_sources()
 
     reconciliation_df = reconcile_equity_bars(yahoo_bars, alpaca_bars)
     return yahoo_bars, alpaca_bars, reconciliation_df
 
 
-def main(db_path: str = "reconciliation.duckdb") -> dict:
+def replay_archived_run(
+    run_id: str,
+    data_root: str | Path = "data",
+) -> pd.DataFrame:
+    """Recompute reconciliation from saved Parquet inputs without API calls."""
+    yahoo_bars = read_dataframe(
+        "YAHOO",
+        EQUITY_INSTRUMENT,
+        run_id,
+        layer="normalized",
+        data_root=data_root,
+    )
+    alpaca_bars = read_dataframe(
+        "ALPACA",
+        EQUITY_INSTRUMENT,
+        run_id,
+        layer="normalized",
+        data_root=data_root,
+    )
+
+    if yahoo_bars.empty or alpaca_bars.empty:
+        raise FileNotFoundError(
+            f"Normalized Yahoo and Alpaca archives are required for run {run_id}"
+        )
+
+    return reconcile_equity_bars(
+        yahoo_bars[EQUITY_COLUMNS],
+        alpaca_bars[EQUITY_COLUMNS],
+    )
+
+
+def main(
+    db_path: str = "reconciliation.duckdb",
+    data_root: str | Path = "data",
+) -> dict:
     run_id = str(uuid4())
     started_at = datetime.now(timezone.utc).isoformat()
     break_count = 0
 
     try:
         initialize_database(db_path)
-        yahoo_bars, alpaca_bars, reconciliation_df = reconciliation()
+        yahoo_raw, alpaca_raw = fetch_equity_sources()
+
+        yahoo_bars = archive_equity_source(
+            yahoo_raw,
+            "YAHOO",
+            run_id,
+            data_root=data_root,
+        )
+        alpaca_bars = archive_equity_source(
+            alpaca_raw,
+            "ALPACA",
+            run_id,
+            data_root=data_root,
+        )
+
+        reconciliation_df = reconcile_equity_bars(yahoo_bars, alpaca_bars)
+        archive_reconciliation_results(
+            reconciliation_df,
+            run_id,
+            data_root=data_root,
+        )
         match_count = len(reconciliation_df[reconciliation_df["status"] == "MATCH"])
         break_count = len(reconciliation_df[reconciliation_df["status"] == "BREAK"])
         finished_at = datetime.now(timezone.utc).isoformat()
@@ -109,4 +179,24 @@ def main(db_path: str = "reconciliation.duckdb") -> dict:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="Run the live equity control or replay archived provider data."
+    )
+    parser.add_argument("--db", default="reconciliation.duckdb")
+    parser.add_argument("--data-root", type=Path, default=Path("data"))
+    parser.add_argument(
+        "--replay-run-id",
+        help="Recompute a report from normalized Parquet files without API calls",
+    )
+    arguments = parser.parse_args()
+
+    if arguments.replay_run_id:
+        replay = replay_archived_run(arguments.replay_run_id, arguments.data_root)
+        print(replay)
+        print(
+            f"Replayed run {arguments.replay_run_id} | "
+            f"MATCH: {(replay['status'] == 'MATCH').sum()} | "
+            f"BREAK: {(replay['status'] == 'BREAK').sum()}"
+        )
+    else:
+        main(arguments.db, arguments.data_root)

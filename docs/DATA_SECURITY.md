@@ -11,7 +11,8 @@ output, not only to network encryption.
 - Provider credentials are loaded only when a live provider call is made. Their
   values are never included in exceptions or dashboard queries.
 - DuckDB files are changed to mode `0600` after database initialization on POSIX
-  systems.
+  systems. Raw, normalized, and reconciliation Parquet archives receive the same
+  owner-only permissions when written.
 - The dashboard connects to DuckDB with `read_only=True` and queries curated run,
   result, and exception tables. It cannot update or resolve exceptions.
 - Raw market-data staging is excluded from the dashboard to reduce unnecessary
