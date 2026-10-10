@@ -54,6 +54,12 @@ This is operational analytics for triage and control monitoring. Exception age,
 owners, SLA breaches, and provider/instrument grouping remain planned until the
 corresponding fields are persisted.
 
+## Schedule the Daily Control
+
+See [docs/SCHEDULING.md](docs/SCHEDULING.md) for complete Windows Task Scheduler
+and Ubuntu cron setup. Both schedules run at 4:30 PM America/New_York on
+weekdays, after the regular US equity-market close.
+
 ## Data Security
 
 - Keep `project.env` local and set its permissions to owner-only (`chmod 600 project.env` on Linux/macOS).
@@ -87,6 +93,6 @@ When either provider returns no option contracts, the reconciliation function re
 
 - Extend DuckDB/Parquet persistence to options and the remaining derivative controls
 - Add a live option reconciliation command with an explicit unavailable-data message
-- Add scheduled runs and alerts
+- Activate and smoke-test scheduled runs and webhook alerts
 - Add exception aging and owner/SLA analytics
 - Replace local secret files with a managed secret store for deployment

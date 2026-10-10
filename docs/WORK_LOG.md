@@ -4,6 +4,52 @@ A running record of changes made to the project, newest first.
 
 ---
 
+## 2026-10-10 — Add Windows and Ubuntu scheduler instructions
+
+- Added `docs/SCHEDULING.md` with Windows Task Scheduler and Ubuntu cron setup.
+- Specified a 4:30 PM America/New_York weekday schedule after market close.
+- Included exact commands, working directories, timezone behavior, smoke tests,
+  result verification, removal steps, and credential-safe logging guidance.
+
+---
+
+## 2026-10-09 — Add data security and break analytics dashboard
+
+### Implemented
+
+- Added `Dashboard/dashboard.py`, a read-only Rich dashboard over DuckDB.
+- Added latest-run KPIs, explicit `MISSING` observations, largest mismatches,
+  break-rate trends, repeat offenders, and exception-status counts.
+- Added one-time and polling modes:
+  `python -m Dashboard.dashboard --db reconciliation.duckdb [--refresh 2]`.
+- Added `security.py` for owner-only file enforcement and secure, lazy Alpaca
+  credential loading.
+- Refactored equity and option clients so importing modules or running offline
+  tests does not require or load provider credentials.
+- Restricted the local credential and DuckDB files to mode `0600` on POSIX.
+- Added dashboard and security tests; the complete offline suite passes.
+
+### Documentation and design decisions
+
+- Added `DATA_SECURITY.md` with the local controls, production control plan,
+  dashboard data classification, and incident-response procedure.
+- Updated the system architecture and workflow to include managed secrets,
+  RBAC, masking, encryption, retention, backups, and immutable audit events.
+- Defined analytics as operational triage: prioritize breaks, missing records,
+  recurring failures, exception workload, and later SLA/owner/provider trends.
+- Marked the DuckDB analytics portion of Task 12 as implemented. ZeroMQ live-feed
+  and anomaly panels remain part of Task 20.
+
+### Remaining deployment work
+
+- Rotate any credential that may have been exposed and verify the old key is
+  revoked.
+- Add exception owner, age, resolution time, and SLA fields.
+- Introduce managed secrets, encrypted storage/backups, service identities,
+  masked views, retention jobs, and a separate immutable audit sink.
+
+---
+
 ## 2026-06-19 — Broaden "derivatives" to all four types + add ingestion + dashboard spec
 
 ### Context / Decisions
@@ -34,10 +80,9 @@ All three are **function-first** (not import-time execution) per the guidance in
 - **`learning.md`** — expanded the financial-domain section to cover all four derivative types and the listed-vs-OTC data distinction.
 - **`requirements.txt`** — added `rich` (for the dashboard).
 
-### New planned feature: Live CLI Dashboard (Module G)
-Specced in `system_design.md` §5. A `rich`-based terminal dashboard (read-only consumer of the ZeroMQ bus + DuckDB) showing live ingestion feed/latency, ML anomalies, reconciliation PASS/WARN/BREAK tallies + top breaks, and pipeline health. ~1 day of work. Turns the demo from "I built this" into "watch me run it." **Not yet implemented** — design only.
+### New planned feature at that time: Live CLI Dashboard (Module G)
+This entry records the June design state. The DuckDB break-analytics slice was
+implemented on 2026-10-09; ZeroMQ ingestion and anomaly panels remain planned.
 
 ### Known follow-ups / open items
-- **Env-var inconsistency:** `Equities.py` uses `ALPACA_API_KEY` / `ALPACA_SECRET_KEY`; `options.py` uses `APCA_API_KEY` / `APCA_API_SECRET_KEY`. Should be unified.
-- Existing `Equities.py` / `options.py` still use the flat import-time-execution pattern (the new modules don't); could be refactored to function-first for consistency.
-- Build the Live CLI Dashboard (Module G).
+- Extend the implemented dashboard with the live ZeroMQ panels described in Task 20.
