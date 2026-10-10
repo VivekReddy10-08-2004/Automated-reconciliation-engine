@@ -1,14 +1,56 @@
-# Environment / secrets
+# Secrets and local environment files
 project.env
+project.env.*
+!project.env.example
 .env
 .env.*
 !.env.example
-.venv/
-alpacca_Recovery_Code.txt
-local_docs/
+*.env
+*.env.*
+!*.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*[Rr]ecovery*[Cc]ode*
+credentials*.json
+secrets*.json
+token*.json
+
+# Local databases and generated data
+*.duckdb*
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+*.parquet
+*.csv
+*.tsv
+*.xlsx
+
+# Personal editor and agent settings
+.vscode/
+.idea/
 .agents/
 .codex/
+.DS_Store
+Thumbs.db
 
-# Python
+# Local project notes and task briefs
+local_docs/
+
+# Python environments, caches, and coverage
+.venv/
+venv/
+env/
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local runtime output
+*.log
