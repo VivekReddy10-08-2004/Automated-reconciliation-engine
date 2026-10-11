@@ -3,13 +3,13 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from notifications import send_run_notification
+from reconciliation_engine.notifications import send_run_notification
 
 
 class NotificationTests(unittest.TestCase):
-    @patch("notifications.requests.post")
-    @patch("notifications.os.getenv", return_value=None)
-    @patch("notifications.load_dotenv")
+    @patch("reconciliation_engine.notifications.requests.post")
+    @patch("reconciliation_engine.notifications.os.getenv", return_value=None)
+    @patch("reconciliation_engine.notifications.load_dotenv")
     @patch("builtins.print")
     def test_clean_run_produces_no_notification(
         self,
@@ -26,9 +26,9 @@ class NotificationTests(unittest.TestCase):
         print_mock.assert_not_called()
         post.assert_not_called()
 
-    @patch("notifications.requests.post")
-    @patch("notifications.os.getenv", return_value=None)
-    @patch("notifications.load_dotenv")
+    @patch("reconciliation_engine.notifications.requests.post")
+    @patch("reconciliation_engine.notifications.os.getenv", return_value=None)
+    @patch("reconciliation_engine.notifications.load_dotenv")
     @patch("builtins.print")
     def test_break_run_without_webhook_prints_one_summary(
         self,
@@ -50,9 +50,12 @@ class NotificationTests(unittest.TestCase):
         )
         post.assert_not_called()
 
-    @patch("notifications.requests.post")
-    @patch("notifications.os.getenv", return_value="https://example.test/webhook-secret")
-    @patch("notifications.load_dotenv")
+    @patch("reconciliation_engine.notifications.requests.post")
+    @patch(
+        "reconciliation_engine.notifications.os.getenv",
+        return_value="https://example.test/webhook-secret",
+    )
+    @patch("reconciliation_engine.notifications.load_dotenv")
     @patch("builtins.print")
     def test_failed_run_with_webhook_posts_one_summary(
         self,
@@ -78,9 +81,12 @@ class NotificationTests(unittest.TestCase):
         response.raise_for_status.assert_called_once_with()
         print_mock.assert_not_called()
 
-    @patch("notifications.requests.post")
-    @patch("notifications.os.getenv", return_value="https://example.test/webhook-secret")
-    @patch("notifications.load_dotenv")
+    @patch("reconciliation_engine.notifications.requests.post")
+    @patch(
+        "reconciliation_engine.notifications.os.getenv",
+        return_value="https://example.test/webhook-secret",
+    )
+    @patch("reconciliation_engine.notifications.load_dotenv")
     def test_webhook_failure_does_not_expose_webhook_url(
         self,
         load_dotenv,

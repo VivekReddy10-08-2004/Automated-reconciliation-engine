@@ -1,5 +1,5 @@
 """
-FX forward ingestion (Module A).
+FX forward ingestion and normalization (Module A).
 
 Like swaps, FX forwards are OTC: no free feed delivers forward outright rates
 directly. This module joins free sources to mark a booked forward against the

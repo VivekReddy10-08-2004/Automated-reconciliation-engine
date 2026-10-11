@@ -1,7 +1,7 @@
 import duckdb
 import pandas as pd
 
-from security import restrict_file_permissions
+from reconciliation_engine.security import restrict_file_permissions
 
 def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
     with duckdb.connect(db_path) as conn:

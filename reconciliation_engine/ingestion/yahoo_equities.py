@@ -1,3 +1,5 @@
+"""Fetch and normalize Yahoo Finance equity bars."""
+
 import pandas as pd
 import yfinance as yf
 

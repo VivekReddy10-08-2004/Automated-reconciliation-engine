@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from security import restrict_file_permissions, validate_private_file
+from reconciliation_engine.security import restrict_file_permissions, validate_private_file
 
 
 @unittest.skipUnless(os.name == "posix", "POSIX permission test")

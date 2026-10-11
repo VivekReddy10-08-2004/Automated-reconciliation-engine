@@ -18,9 +18,10 @@ output, not only to network encryption.
 - Raw market-data staging is excluded from the dashboard to reduce unnecessary
   exposure.
 
-The corresponding implementation lives in `security.py`, provider ingestion
-modules, `Storage/storage.py`, and `Dashboard/dashboard.py`. Automated tests
-verify private-file enforcement and read-only analytics loading.
+The corresponding implementation lives in `reconciliation_engine/security.py`,
+the provider ingestion package, `reconciliation_engine/storage/duckdb.py`, and
+`reconciliation_engine/dashboard.py`. Automated tests verify private-file
+enforcement and read-only analytics loading.
 
 These controls protect a single-user local MVP. A shared or deployed service
 also needs the controls below.

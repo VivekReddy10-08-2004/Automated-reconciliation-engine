@@ -33,9 +33,9 @@ To ensure the project is fully open and free, we utilize:
 | --- | --- | --- |
 | Equities | Alpaca + yfinance | OHLCV bars. |
 | Options | Alpaca + yfinance | Full OPRA chains. |
-| Futures (`Ingestion/futures.py`) | yfinance (`ES=F`, `CL=F`, …) | Continuous-contract OHLCV. Alpaca has no free futures feed. |
-| Swaps (`Ingestion/swaps.py`) | Synthetic blotter + yfinance yields (`^IRX`, `^TNX`) | OTC: no public feed. Internal book marked vs a free reference rate. |
-| Forwards (`Ingestion/forwards.py`) | Synthetic blotter + yfinance FX spot | OTC: booked forward marked vs a covered-interest-parity forward derived from live spot. |
+| Futures (`reconciliation_engine/ingestion/futures.py`) | yfinance (`ES=F`, `CL=F`, …) | Continuous-contract OHLCV. Alpaca has no free futures feed. |
+| Swaps (`reconciliation_engine/ingestion/swaps.py`) | Synthetic blotter + yfinance yields (`^IRX`, `^TNX`) | OTC: no public feed. Internal book marked vs a free reference rate. |
+| Forwards (`reconciliation_engine/ingestion/forwards.py`) | Synthetic blotter + yfinance FX spot | OTC: booked forward marked vs a covered-interest-parity forward derived from live spot. |
 
 All instrument classes flow through the same pipeline. **Equities/futures** are keyed by `(symbol, trade_date)`; **options** by the full OPRA identity `(underlying, expiry, strike, option_type, trade_date)`; **swaps/forwards** by `(trade_id, trade_date)` since OTC trades are identified by booking reference, not a listed symbol.
 
@@ -107,8 +107,8 @@ The dashboard is a **passive subscriber** — it never writes, so it can't affec
 ### Tech & Effort
 *   **Library:** `rich` (`Live`, `Layout`, `Table`, `Panel`, `Progress`). Already a lightweight, pure-Python dependency.
 *   **Scope:** The DuckDB analytics slice is implemented. ZeroMQ ingestion/anomaly panels and richer exception analytics remain planned.
-*   **Run once:** `python -m Dashboard.dashboard --db reconciliation.duckdb`.
-*   **Poll continuously:** `python -m Dashboard.dashboard --db reconciliation.duckdb --refresh 2`.
+*   **Run once:** `python -m reconciliation_engine.dashboard --db reconciliation.duckdb`.
+*   **Poll continuously:** `python -m reconciliation_engine.dashboard --db reconciliation.duckdb --refresh 2`.
 
 ### Why It's Worth It
 *   **Demo impact:** A live, updating terminal UI is far more convincing in interviews than static logs or screenshots.

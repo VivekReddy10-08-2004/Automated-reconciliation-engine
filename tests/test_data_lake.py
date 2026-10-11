@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pandas as pd
 from pandas.testing import assert_frame_equal
 
-from data_lake import (
+from reconciliation_engine.storage.data_lake import (
     EQUITY_ARCHIVE_COLUMNS,
     EQUITY_COLUMNS,
     EQUITY_INSTRUMENT,
@@ -16,7 +16,7 @@ from data_lake import (
     read_reconciliation_results,
     write_dataframe,
 )
-from run_equity_reconciliation import main, replay_archived_run
+from reconciliation_engine.batch import main, replay_archived_run
 
 
 def equity_frame(close: float) -> pd.DataFrame:
@@ -43,9 +43,9 @@ class DataLakeTests(unittest.TestCase):
             sources = (equity_frame(101.0), equity_frame(100.0))
 
             with patch(
-                "run_equity_reconciliation.fetch_equity_sources",
+                "reconciliation_engine.batch.fetch_equity_sources",
                 return_value=sources,
-            ), patch("run_equity_reconciliation.send_run_notification"), patch(
+            ), patch("reconciliation_engine.batch.send_run_notification"), patch(
                 "builtins.print"
             ):
                 first = main(str(database), root)

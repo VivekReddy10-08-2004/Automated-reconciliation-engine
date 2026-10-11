@@ -11,7 +11,7 @@ from typing import Callable, Iterator
 
 import zmq
 
-from realtime import get_endpoint, validate_local_endpoint
+from reconciliation_engine.realtime import get_endpoint, validate_local_endpoint
 
 
 TICK_FIELDS = (

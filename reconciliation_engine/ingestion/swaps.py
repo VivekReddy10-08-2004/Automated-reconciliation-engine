@@ -1,5 +1,5 @@
 """
-Interest-rate swap ingestion (Module A).
+Interest-rate swap ingestion and normalization (Module A).
 
 Swaps are OTC instruments: there is no consolidated, free market-data feed that
 lets you "download a swap chain" the way you can with listed options or futures.

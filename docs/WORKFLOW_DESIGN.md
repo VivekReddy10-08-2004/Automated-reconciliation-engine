@@ -209,8 +209,8 @@ If you can demo this live with 5-10 tickers, you are strongly aligned with Trade
 ## 7) Implementation Sequence (2-Week Practical Path)
 
 ### Week 1
-1. Build ingestion from two sources for equities (`Ingestion/Equities.py`).
-2. Add derivatives ingestion: pull options chains from both sources (`Ingestion/options.py`).
+1. Build ingestion from two sources for equities (`reconciliation_engine/ingestion/`).
+2. Add derivatives ingestion through the provider adapters in the same package.
 3. Standardize both schemas and write staged tables (`market_data_staging`, `options_data_staging`).
 4. Add `pipeline_runs` and logging.
 

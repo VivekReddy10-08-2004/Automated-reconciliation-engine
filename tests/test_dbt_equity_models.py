@@ -8,7 +8,7 @@ import unittest
 import duckdb
 import pandas as pd
 
-from Ingestion.equity_reconciliation import reconcile_equity_bars
+from reconciliation_engine.reconciliation.equities import reconcile_equity_bars
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

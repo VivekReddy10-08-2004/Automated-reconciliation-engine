@@ -9,7 +9,7 @@ from typing import Final, Iterable
 import duckdb
 import pandas as pd
 
-from security import restrict_file_permissions
+from reconciliation_engine.security import restrict_file_permissions
 
 
 DEFAULT_DATA_ROOT: Final = Path("data")

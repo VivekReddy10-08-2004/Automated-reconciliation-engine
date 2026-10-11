@@ -4,6 +4,20 @@ A running record of changes made to the project, newest first.
 
 ---
 
+## 2026-10-10 — Add the replayable Parquet data lake
+
+- Added immutable raw and normalized equity archives for Yahoo and Alpaca using
+  source, instrument, and run-ID partitions beneath `data/`.
+- Added a separate reconciliation-result archive and preserved `run_id` inside
+  every Parquet file as well as in its path.
+- Integrated archive writes into the live equity command before and after
+  reconciliation.
+- Added `--replay-run-id` to recompute a saved report without provider API calls.
+- Added missing-file schemas, overwrite protection, owner-only POSIX file
+  permissions, data-lake tests, and Git exclusions for the full `data/` tree.
+
+---
+
 ## 2026-10-10 — Add Windows and Ubuntu scheduler instructions
 
 - Added `docs/SCHEDULING.md` with Windows Task Scheduler and Ubuntu cron setup.

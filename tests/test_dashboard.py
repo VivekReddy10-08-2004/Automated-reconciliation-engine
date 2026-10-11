@@ -4,7 +4,7 @@ from pathlib import Path
 
 import duckdb
 
-from Dashboard.dashboard import load_dashboard_data
+from reconciliation_engine.dashboard import load_dashboard_data
 
 
 class DashboardAnalyticsTests(unittest.TestCase):

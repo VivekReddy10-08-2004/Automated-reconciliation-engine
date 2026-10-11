@@ -1,3 +1,5 @@
+"""Send run summaries without exposing notification credentials."""
+
 import os
 
 import requests

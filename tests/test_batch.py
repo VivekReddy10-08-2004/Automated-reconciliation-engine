@@ -3,10 +3,10 @@ from unittest.mock import DEFAULT, patch
 
 import pandas as pd
 
-import run_equity_reconciliation
+from reconciliation_engine import batch
 
 
-class RunFailureHandlingTests(unittest.TestCase):
+class BatchFailureHandlingTests(unittest.TestCase):
     def test_completed_runs_send_their_final_summary_once(self):
         source = pd.DataFrame({"trade_date": ["2026-10-09"]})
 
@@ -22,7 +22,7 @@ class RunFailureHandlingTests(unittest.TestCase):
                     }
                 )
                 with patch.multiple(
-                    run_equity_reconciliation,
+                    batch,
                     initialize_database=DEFAULT,
                     fetch_equity_sources=DEFAULT,
                     archive_equity_source=DEFAULT,
@@ -40,14 +40,14 @@ class RunFailureHandlingTests(unittest.TestCase):
                     mocks["reconcile_equity_bars"].return_value = result
                     mocks["create_equity_exceptions"].return_value = pd.DataFrame()
 
-                    summary = run_equity_reconciliation.main("test.duckdb")
+                    summary = batch.main("test.duckdb")
 
                 self.assertEqual(summary["status"], expected_status)
                 self.assertEqual(summary["break_count"], expected_breaks)
                 mocks["send_run_notification"].assert_called_once_with(summary)
 
-    @patch("run_equity_reconciliation.send_run_notification")
-    @patch("run_equity_reconciliation.initialize_database")
+    @patch("reconciliation_engine.batch.send_run_notification")
+    @patch("reconciliation_engine.batch.initialize_database")
     def test_unexpected_failure_sends_failed_summary(
         self,
         initialize_database,
@@ -56,7 +56,7 @@ class RunFailureHandlingTests(unittest.TestCase):
         initialize_database.side_effect = RuntimeError("database unavailable")
 
         with self.assertRaisesRegex(RuntimeError, "database unavailable"):
-            run_equity_reconciliation.main("test.duckdb")
+            batch.main("test.duckdb")
 
         summary = send_run_notification.call_args.args[0]
         self.assertEqual(summary["status"], "FAILED")

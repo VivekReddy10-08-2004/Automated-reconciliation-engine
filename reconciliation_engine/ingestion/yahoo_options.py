@@ -1,3 +1,5 @@
+"""Fetch and normalize Yahoo Finance option chains."""
+
 from datetime import datetime, timezone
 import yfinance as yf
 import pandas as pd

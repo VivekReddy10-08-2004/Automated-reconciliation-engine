@@ -1,3 +1,5 @@
+"""Reconcile normalized Yahoo and Alpaca option chains."""
+
 import pandas as pd
 
 OUTPUT_COLUMNS = [

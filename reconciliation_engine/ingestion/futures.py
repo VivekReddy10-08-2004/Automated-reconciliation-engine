@@ -1,5 +1,5 @@
 """
-Futures ingestion (Module A).
+Futures ingestion and normalization (Module A).
 
 Alpaca does not provide futures market data on its free tier, so this module
 sources continuous futures contracts from Yahoo Finance via ``yfinance``

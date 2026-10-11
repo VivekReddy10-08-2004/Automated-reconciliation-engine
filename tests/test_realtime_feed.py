@@ -7,14 +7,19 @@ from uuid import uuid4
 
 import zmq
 
-from realtime import get_endpoint
-from realtime.publisher import SIMULATED_PRICES, TICK_FIELDS, create_tick
-from realtime.publisher import publish_simulated_ticks, simulated_prices
-from realtime.subscriber import receive_ticks, validate_tick
+from reconciliation_engine.realtime import get_endpoint
+from reconciliation_engine.realtime.publisher import (
+    SIMULATED_PRICES,
+    TICK_FIELDS,
+    create_tick,
+    publish_simulated_ticks,
+    simulated_prices,
+)
+from reconciliation_engine.realtime.subscriber import receive_ticks, validate_tick
 
 
 class RealtimeTickContractTests(unittest.TestCase):
-    @patch("realtime.load_dotenv")
+    @patch("reconciliation_engine.realtime.load_dotenv")
     def test_endpoint_comes_from_the_environment(self, load_dotenv):
         with patch.dict(
             os.environ,

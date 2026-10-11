@@ -1,8 +1,9 @@
 # Daily Reconciliation Scheduling
 
-Run `run_equity_reconciliation.py` at **4:30 PM America/New_York, Monday
-through Friday**. The regular US equity session closes at 4:00 PM Eastern, so
-this gives the providers 30 minutes to publish end-of-day data.
+Run `python -m reconciliation_engine.batch` at **4:30 PM
+America/New_York, Monday through Friday**. The regular US equity session closes
+at 4:00 PM Eastern, so this gives the providers 30 minutes to publish
+end-of-day data.
 
 The schedule still runs on market holidays. It also runs after early-close
 sessions, because those sessions finish before 4:30 PM. Holiday awareness can
@@ -12,7 +13,7 @@ Before creating either schedule, run the command manually from the project root
 and confirm that `project.env` contains the required Alpaca credentials:
 
 ```text
-python run_equity_reconciliation.py
+python -m reconciliation_engine.batch
 ```
 
 Clean runs remain silent. Runs with breaks and failed runs use the Task 11
@@ -37,11 +38,9 @@ line to the actual Windows checkout location, then run the complete block:
 ```powershell
 $ProjectDirectory = "C:\path\to\Automated-reconciliation-engine"
 $PythonExecutable = Join-Path $ProjectDirectory ".venv\Scripts\python.exe"
-$Runner = Join-Path $ProjectDirectory "run_equity_reconciliation.py"
-
 $Action = New-ScheduledTaskAction `
     -Execute $PythonExecutable `
-    -Argument "`"$Runner`"" `
+    -Argument "-m reconciliation_engine.batch" `
     -WorkingDirectory $ProjectDirectory
 
 $Trigger = New-ScheduledTaskTrigger `
@@ -62,7 +61,7 @@ Register-ScheduledTask `
 The scheduled action executes:
 
 ```text
-C:\path\to\Automated-reconciliation-engine\.venv\Scripts\python.exe C:\path\to\Automated-reconciliation-engine\run_equity_reconciliation.py
+C:\path\to\Automated-reconciliation-engine\.venv\Scripts\python.exe -m reconciliation_engine.batch
 ```
 
 with this working directory:
@@ -126,7 +125,7 @@ crontab -e
 Add these lines:
 
 ```cron
-30 16 * * 1-5 cd /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine && /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine/.venv/bin/python /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine/run_equity_reconciliation.py >> /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine/logs/reconciliation.log 2>&1
+30 16 * * 1-5 cd /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine && /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine/.venv/bin/python -m reconciliation_engine.batch >> /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine/logs/reconciliation.log 2>&1
 ```
 
 The explicit `cd` sets the working directory so `project.env` and
@@ -142,7 +141,7 @@ Smoke-test the exact command without waiting for the scheduled time:
 
 ```bash
 cd /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine
-./.venv/bin/python run_equity_reconciliation.py >> logs/reconciliation.log 2>&1
+./.venv/bin/python -m reconciliation_engine.batch >> logs/reconciliation.log 2>&1
 echo $?
 tail -n 50 logs/reconciliation.log
 ```

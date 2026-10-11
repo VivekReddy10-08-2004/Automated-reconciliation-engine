@@ -10,8 +10,8 @@ from typing import Callable
 
 import zmq
 
-from realtime import get_endpoint, validate_local_endpoint
-from realtime.publisher import TICK_FIELDS
+from reconciliation_engine.realtime import get_endpoint, validate_local_endpoint
+from reconciliation_engine.realtime.publisher import TICK_FIELDS
 
 
 def _parse_utc_timestamp(value: object, field_name: str) -> datetime:

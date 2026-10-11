@@ -24,7 +24,7 @@ A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes 
 3. Run the reconciliation demo from the project root:
 
 ```powershell
-python run_equity_reconciliation.py
+python -m reconciliation_engine.batch
 ```
 
 The command compares recent daily AAPL bars, saves the audit trail to DuckDB,
@@ -34,7 +34,7 @@ contains its `run_id` and an existing run file is never overwritten.
 Replay a saved run without calling Yahoo or Alpaca:
 
 ```powershell
-python run_equity_reconciliation.py --replay-run-id <run-id>
+python -m reconciliation_engine.batch --replay-run-id <run-id>
 ```
 
 Provider files use this layout:
@@ -68,13 +68,13 @@ The initial feed is explicitly simulated and does not require API credentials.
 Start the subscriber in one terminal:
 
 ```powershell
-python -m realtime.subscriber --count 10
+python -m reconciliation_engine.realtime.subscriber --count 10
 ```
 
 Then start the publisher in another terminal:
 
 ```powershell
-python -m realtime.publisher --count 10
+python -m reconciliation_engine.realtime.publisher --count 10
 ```
 
 Both commands use `REALTIME_ZMQ_ENDPOINT`, which defaults to the local endpoint
@@ -85,7 +85,7 @@ run continuously and stop cleanly with Ctrl+C.
 View a one-time reconciliation control-room snapshot:
 
 ```powershell
-python -m Dashboard.dashboard --db reconciliation.duckdb
+python -m reconciliation_engine.dashboard --db reconciliation.duckdb
 ```
 
 Add `--refresh 2` for a continuously updating view. The dashboard opens DuckDB
@@ -124,19 +124,44 @@ See [docs/DATA_SECURITY.md](docs/DATA_SECURITY.md) for the threat model and prod
 ## Project Structure
 
 ```text
-Ingestion/Equities_yf.py            Yahoo equity ingestion and normalization
-Ingestion/options_yf.py             Yahoo options ingestion and normalization
-Ingestion/Equities.py               Alpaca equity ingestion and normalization
-Ingestion/equity_reconciliation.py  Yahoo vs. Alpaca equity comparison
-Ingestion/options_reconciliation.py Yahoo vs. Alpaca option comparison logic
-Dashboard/dashboard.py              Read-only break analytics dashboard
-data_lake.py                         Immutable Parquet archive and replay helpers
-dbt/                                 DuckDB staging and reconciliation models
-realtime/publisher.py                Simulated ZeroMQ equity tick publisher
-realtime/subscriber.py               Validating ZeroMQ tick subscriber
-run_equity_reconciliation.py         Live run and offline replay commands
-security.py                         Local secret and file-permission controls
+Automated-reconciliation-engine/
+├── reconciliation_engine/        # Python application package
+│   ├── batch.py                   # Daily batch command and archive replay
+│   ├── dashboard.py               # Read-only reconciliation dashboard
+│   ├── notifications.py           # Break and failure notifications
+│   ├── security.py                # Credentials and file permissions
+│   ├── ingestion/                 # Provider adapters and normalization
+│   │   ├── alpaca_equities.py
+│   │   ├── alpaca_options.py
+│   │   ├── yahoo_equities.py
+│   │   ├── yahoo_options.py
+│   │   ├── futures.py
+│   │   ├── swaps.py
+│   │   └── forwards.py
+│   ├── reconciliation/            # Comparison rules and exceptions
+│   │   ├── equities.py
+│   │   ├── options.py
+│   │   └── exceptions.py
+│   ├── storage/                   # Durable local data interfaces
+│   │   ├── duckdb.py
+│   │   └── data_lake.py
+│   └── realtime/                  # ZeroMQ publish/subscribe path
+│       ├── publisher.py
+│       └── subscriber.py
+├── dbt/                           # Versioned DuckDB SQL transformations
+│   ├── models/
+│   └── tests/
+├── tests/                         # Offline unit and integration tests
+├── docs/                          # Architecture, operations, and security
+├── project.env.example            # Safe configuration template
+├── pyproject.toml                 # Python project and dependencies
+└── README.md
 ```
+
+Application code belongs inside `reconciliation_engine/`; SQL transformations
+belong inside `dbt/`; automated checks belong inside `tests/`; and operational
+guidance belongs inside `docs/`. Runtime databases, Parquet data, logs, virtual
+environments, and generated dbt artifacts stay local through `.gitignore`.
 
 ## Options Data Availability
 

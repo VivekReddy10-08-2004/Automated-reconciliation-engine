@@ -1,7 +1,10 @@
 import pandas as pd
 import unittest
 
-from Ingestion.equity_reconciliation import RECONCILIATION_COLUMNS, reconcile_equity_bars
+from reconciliation_engine.reconciliation.equities import (
+    RECONCILIATION_COLUMNS,
+    reconcile_equity_bars,
+)
 
 
 class ReconciliationTests(unittest.TestCase):
