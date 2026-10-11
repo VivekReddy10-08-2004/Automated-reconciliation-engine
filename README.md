@@ -136,27 +136,33 @@ flags a movement in the deterministic simulated sequence. The optional
 `isolation_forest_flags` function supports offline comparison without changing
 the transparent rule used by the live scorer.
 
-View a one-time reconciliation control-room snapshot:
+View a one-time reconciliation control-room snapshot. It remains usable when
+either DuckDB or the annotated feed is unavailable:
 
 ```powershell
 python -m reconciliation_engine.dashboard --db reconciliation.duckdb
 ```
 
-Add `--refresh 2` for a continuously updating view. The dashboard opens DuckDB
-in read-only mode and displays the latest run, break-rate history, largest
-mismatches, repeat offenders, and exception-queue counts.
+Add `--refresh 0.5` for a continuously updating batch and real-time view:
+
+```powershell
+python -m reconciliation_engine.dashboard --db reconciliation.duckdb --refresh 0.5
+```
+
+The dashboard opens DuckDB in read-only mode and uses only a ZeroMQ `SUB`
+socket. It displays the latest batch status and MATCH/WARN/BREAK counts, the top
+five breaks, the most recent annotated tick and latency, anomalies observed in
+the last 60 seconds, and the latest anomaly reason. Refresh requests below 0.5
+seconds are bounded to 0.5 seconds.
 
 | Panel | Operator question |
 | --- | --- |
-| Latest run | Did the control complete, and how many records matched or broke? |
-| Largest mismatches | Which differences or missing observations need attention first? |
-| Break-rate trend | Is reconciliation quality improving or deteriorating across runs? |
-| Repeat offenders | Which instruments and metrics repeatedly fail the control? |
-| Exception queue | How much unresolved work remains? |
+| Batch reconciliation | Did the control complete, what matched/warned/broke, and which five breaks are largest? |
+| Real-time anomaly feed | What was the latest tick and latency, and were recent movements anomalous? |
 
-This is operational analytics for triage and control monitoring. Exception age,
-owners, SLA breaches, and provider/instrument grouping remain planned until the
-corresponding fields are persisted.
+Start the task 17 scorer and task 16 publisher as shown above to populate the
+live panel. See [Dashboard degraded-mode demonstrations](docs/DASHBOARD_DEMO.md)
+for captured examples of both panels available and each independent failure.
 
 ## Schedule the Daily Control
 

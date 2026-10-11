@@ -2,10 +2,10 @@
 
 This document translates the Task 1–21 specifications in `local_docs/` into an end-state architecture, an operational workflow, and an implementation dependency map.
 
-Tasks 1–8, the DuckDB portion of Task 12, and Tasks 14–17 represent the implemented
+Tasks 1–8, the DuckDB portion of Task 12, Tasks 14–17, and Task 20 represent the implemented
 local equity-control MVP. Task 19 is implemented but awaits a Docker runtime
-verification. Tasks 9–11, 13, 18, and 20–21 extend the MVP toward derivatives,
-alerting, orchestration, live monitoring, and a final reproducible release. Security is
+verification. Tasks 9–11, 13, 18, and 21 extend the MVP toward derivatives,
+alerting, orchestration, and a final reproducible release. Security is
 an end-to-end acceptance condition rather than a single isolated task.
 
 ## 1. End-State System Architecture
@@ -203,17 +203,17 @@ flowchart LR
     classDef complete fill:#d1fae5,stroke:#047857,color:#064e3b
     classDef verification fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef planned fill:#e0e7ff,stroke:#4338ca,color:#312e81
-    class task1,task2,task3,task4,task5,task6,task7,task8,task12,task14,task15,task16,task17 complete
+    class task1,task2,task3,task4,task5,task6,task7,task8,task12,task14,task15,task16,task17,task20 complete
     class task19 verification
-    class task9,task10,task11,task13,task18,task20,task21 planned
+    class task9,task10,task11,task13,task18,task21 planned
 ```
 
 Green nodes are implemented, including the DuckDB break-analytics slice of Task
 12, the equity Parquet archive from Task 14, the dbt transformation layer from
 Task 15, the simulated ZeroMQ feed from Task 16, and the explainable anomaly
-scorer from Task 17. Task 19 is amber until its batch image is built and run on
-a Docker host. Purple nodes remain on the roadmap. Task 20 extends the existing
-dashboard with ZeroMQ feed and anomaly panels.
+scorer from Task 17, and the fault-isolated live dashboard from Task 20. Task 19
+is amber until its batch image is built and run on a Docker host. Purple nodes
+remain on the roadmap.
 
 ## 4. Core Data Contracts
 

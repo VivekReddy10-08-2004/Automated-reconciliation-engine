@@ -15,7 +15,7 @@ The system is built as a set of decoupled microservices. Instead of one large Py
 4. **Module C (Reconciliation via dbt):** Uses dbt SQL models to compare vendor feeds.
 5. **Module B (Storage Data Lakehouse):** Writes Parquet files and queries via DuckDB.
 6. **Module D (Watchdog):** The alerting system.
-7. **Module G (CLI Control-Room Dashboard):** An implemented read-only `rich` dashboard for DuckDB reconciliation analytics, with planned ZeroMQ panels for live feed and anomaly state (see Section 5).
+7. **Module G (CLI Control-Room Dashboard):** An implemented read-only `rich` dashboard combining DuckDB reconciliation state with a ZeroMQ anomaly feed (see Section 5).
 8. **Module O (Orchestration):** Apache Airflow DAGs to run the batch ETL workflow.
 9. **Infrastructure (Docker):** The entire stack is containerized using Docker and spun up via `docker-compose`.
 10. **Security Control Plane:** Secrets, access roles, encryption, retention, masking, and audit events apply across every module.
@@ -87,8 +87,8 @@ All instrument classes flow through the same pipeline. **Equities/futures** are 
 ## 5. CLI Control-Room Dashboard (Module G — Demo & Observability)
 
 A terminal dashboard built with **`rich`** makes breaks and control health visible.
-The implemented batch view polls DuckDB; the planned live view will add ZeroMQ
-feed and anomaly panels without changing the dashboard's read-only role.
+Independent batch and live panels poll DuckDB and the annotated ZeroMQ feed
+without changing the dashboard's read-only role.
 
 ### What It Shows
 The screen is a `rich` layout refreshed ~1–2×/second via `rich.live.Live`, divided into panels:
@@ -97,19 +97,19 @@ The screen is a `rich` layout refreshed ~1–2×/second via `rich.live.Live`, di
 2.  **Largest Mismatches (implemented):** Source values and deltas for the latest run, with absent observations displayed as `MISSING`.
 3.  **Operational Analytics (implemented):** Break-rate history, repeat offenders, and exception counts.
 4.  **Exception Management Analytics (planned):** Owner, age, SLA breaches, and resolution trends after those fields are persisted.
-5.  **Ingestion Feed (planned):** Recent ticks/bars, source, feed latency, and throughput.
-6.  **Anomaly Monitor (planned):** Scored/flagged counts and explained recent anomalies.
+5.  **Ingestion Feed (implemented):** Most recent annotated tick, feed latency, and received count.
+6.  **Anomaly Monitor (implemented):** Rolling recent anomaly count and latest explained anomaly.
 
 ### How It Gets Data (read-only consumer)
 The dashboard is a **passive subscriber** — it never writes, so it can't affect the pipeline (consistent with the fault-isolation principle above):
 *   **Batch panels (implemented)** connect to DuckDB with `read_only=True` and query curated run, reconciliation, and exception tables.
-*   **Real-time panels (planned)** subscribe to the **ZeroMQ bus** (Module E), reading the same annotated ticks the ML engine publishes.
+*   **Real-time panels (implemented)** use a `SUB`-only socket on the **ZeroMQ bus** (Module E), reading the same annotated ticks the scorer publishes.
 
 ### Tech & Effort
 *   **Library:** `rich` (`Live`, `Layout`, `Table`, `Panel`, `Progress`). Already a lightweight, pure-Python dependency.
-*   **Scope:** The DuckDB analytics slice is implemented. ZeroMQ ingestion/anomaly panels and richer exception analytics remain planned.
+*   **Scope:** DuckDB batch state and ZeroMQ ingestion/anomaly panels are implemented. Richer exception analytics remain planned.
 *   **Run once:** `python -m reconciliation_engine.dashboard --db reconciliation.duckdb`.
-*   **Poll continuously:** `python -m reconciliation_engine.dashboard --db reconciliation.duckdb --refresh 2`.
+*   **Poll continuously:** `python -m reconciliation_engine.dashboard --db reconciliation.duckdb --refresh 0.5`.
 
 ### Why It's Worth It
 *   **Demo impact:** A live, updating terminal UI is far more convincing in interviews than static logs or screenshots.
@@ -139,7 +139,7 @@ counterparty fields must be masked according to the viewer's role.
 | Exception counts by status | `equity_exceptions` | Implemented |
 | Exception age, owner, and SLA | Expanded exception schema | Planned |
 | Provider, rule, and instrument grouping | Unified reconciliation facts | Planned |
-| Live latency and anomaly panels | ZeroMQ topics | Planned |
+| Live latency and anomaly panels | ZeroMQ annotated-tick endpoint | Implemented |
 
 ---
 

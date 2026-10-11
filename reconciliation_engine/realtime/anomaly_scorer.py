@@ -15,10 +15,12 @@ from reconciliation_engine.realtime import (
     get_scored_endpoint,
     validate_local_endpoint,
 )
+from reconciliation_engine.realtime.publisher import TICK_FIELDS
 from reconciliation_engine.realtime.subscriber import validate_tick
 
 
 ANNOTATION_FIELDS = ("pct_change", "is_anomaly", "reason")
+ANNOTATED_TICK_FIELDS = (*TICK_FIELDS, *ANNOTATION_FIELDS)
 DEFAULT_THRESHOLD_PCT = 1.0
 
 
@@ -71,6 +73,31 @@ def score_tick(
         "is_anomaly": is_anomaly,
         "reason": reason,
     }
+
+
+def validate_annotated_tick(message: object) -> dict[str, object]:
+    """Validate the exact task 17 contract consumed by read-only clients."""
+    if not isinstance(message, dict) or set(message) != set(ANNOTATED_TICK_FIELDS):
+        raise ValueError(
+            f"annotated tick fields must be exactly: "
+            f"{', '.join(ANNOTATED_TICK_FIELDS)}"
+        )
+    validate_tick({field: message[field] for field in TICK_FIELDS})
+
+    pct_change = message["pct_change"]
+    if pct_change is not None and (
+        isinstance(pct_change, bool)
+        or not isinstance(pct_change, (int, float))
+        or not math.isfinite(float(pct_change))
+    ):
+        raise ValueError("pct_change must be a finite number or None")
+    if not isinstance(message["is_anomaly"], bool):
+        raise ValueError("is_anomaly must be boolean")
+    if not isinstance(message["reason"], str) or not message["reason"].strip():
+        raise ValueError("reason must be a non-empty string")
+    if message["is_anomaly"] and pct_change is None:
+        raise ValueError("an anomalous tick must include pct_change")
+    return message
 
 
 class RuleBasedAnomalyScorer:
