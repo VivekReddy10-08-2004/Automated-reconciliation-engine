@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: reconciliation
+    description: Tables populated by the Python reconciliation runner.
+    schema: main
+    tables:
+      - name: equity_bars_staging
+        description: Provider equity bars captured for each pipeline run.

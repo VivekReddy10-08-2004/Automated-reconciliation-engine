@@ -42,6 +42,7 @@ local_docs/
 
 # Python environments, caches, and coverage
 .venv/
+dbt-env/
 venv/
 env/
 __pycache__/
@@ -55,3 +56,12 @@ htmlcov/
 
 # Local runtime output
 *.log
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml
+
+# Generated design exports (source diagrams live in Markdown)
+/Basic_visualization of the project.png
+/Gemini_Generated_System_design_u157slu157slu157.png
+/docs/mermaid-diagram-*.png

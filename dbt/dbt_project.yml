@@ -1,0 +1,18 @@
+name: "reconciliation_analytics"
+version: "1.0.0"
+config-version: 2
+
+profile: "reconciliation_analytics"
+
+model-paths: ["models"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages", "logs"]
+
+models:
+  reconciliation_analytics:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table

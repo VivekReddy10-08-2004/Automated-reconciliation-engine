@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: stg_equity_bars
+    description: Typed, normalized, and deduplicated equity bars from both providers.
+    columns:
+      - name: bar_key
+        description: Composite key for one provider observation in one run.
+        data_tests:
+          - not_null
+          - unique
+      - name: run_id
+        data_tests:
+          - not_null
+      - name: source
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [YAHOO, ALPACA]
+      - name: symbol
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null

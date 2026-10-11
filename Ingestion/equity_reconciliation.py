@@ -42,10 +42,22 @@ def reconcile_equity_bars(
     yahoo_bars: pd.DataFrame,
     alpaca_bars: pd.DataFrame,
     close_tolerance: float = 0.01,
+    warn_tolerance: float | None = None,
 ) -> pd.DataFrame:
     """
     Reconcile equity bars from Yahoo Finance and Alpaca.
+
+    ``close_tolerance`` remains the break threshold for backwards
+    compatibility. When ``warn_tolerance`` is provided, differences above it
+    and at or below ``close_tolerance`` are labelled ``WARN``. This optional
+    mode is the Python reference for the dbt reconciliation fact model.
     """
+    if close_tolerance < 0:
+        raise ValueError("close_tolerance must be non-negative")
+    if warn_tolerance is not None and not 0 <= warn_tolerance <= close_tolerance:
+        raise ValueError(
+            "warn_tolerance must be non-negative and no greater than close_tolerance"
+        )
     yahoo_bars = yahoo_bars.copy()
     alpaca_bars = alpaca_bars.copy()
     validate_equity_bars(yahoo_bars)
@@ -78,6 +90,12 @@ def reconcile_equity_bars(
         | merged["close_difference"].isna(),
         "status",
     ] = "BREAK"
+    if warn_tolerance is not None:
+        merged.loc[
+            (merged["close_difference"].abs() > warn_tolerance)
+            & (merged["close_difference"].abs() <= close_tolerance),
+            "status",
+        ] = "WARN"
 
     return merged[RECONCILIATION_COLUMNS]
 

@@ -9,6 +9,7 @@ A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes 
 - Normalized Alpaca option chains using the same canonical option schema
 - Normalized Alpaca daily equity bars using the same equity schema
 - Equity reconciliation report with Yahoo/Alpaca close and volume differences
+- Versioned dbt models for typed staging, provider pairing, and reconciliation facts
 - Offline-tested Yahoo/Alpaca option reconciliation by full contract identity
 - `MATCH` / `BREAK` status using a configurable close-price tolerance
 - Immutable raw and normalized Parquet archives partitioned by source and run ID
@@ -48,6 +49,17 @@ Run the offline reconciliation tests without API credentials or network access:
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+Build the SQL transformation layer against the local DuckDB file:
+
+```powershell
+dbt build --project-dir dbt --profiles-dir dbt
+```
+
+Set `RECONCILIATION_DB_PATH` to target another DuckDB file. A successful build
+creates the queryable `main.fct_equity_reconciliation` table with `MATCH`,
+`WARN`, and `BREAK` outcomes. Absolute close differences above `0.01` warn;
+differences above `0.05`, or missing closes, break.
 
 View a one-time reconciliation control-room snapshot:
 
@@ -98,6 +110,7 @@ Ingestion/equity_reconciliation.py  Yahoo vs. Alpaca equity comparison
 Ingestion/options_reconciliation.py Yahoo vs. Alpaca option comparison logic
 Dashboard/dashboard.py              Read-only break analytics dashboard
 data_lake.py                         Immutable Parquet archive and replay helpers
+dbt/                                 DuckDB staging and reconciliation models
 run_equity_reconciliation.py         Live run and offline replay commands
 security.py                         Local secret and file-permission controls
 ```
@@ -110,7 +123,7 @@ When either provider returns no option contracts, the reconciliation function re
 
 ## Planned Next Steps
 
-- Extend DuckDB/Parquet persistence to options and the remaining derivative controls
+- Extend DuckDB/Parquet/dbt coverage to options and the remaining derivative controls
 - Add a live option reconciliation command with an explicit unavailable-data message
 - Activate and smoke-test scheduled runs and webhook alerts
 - Add exception aging and owner/SLA analytics

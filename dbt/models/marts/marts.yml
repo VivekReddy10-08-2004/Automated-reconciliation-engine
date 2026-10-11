@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: fct_equity_reconciliation
+    description: Queryable equity comparison facts with MATCH, WARN, and BREAK outcomes.
+    columns:
+      - name: run_id
+        data_tests:
+          - not_null
+      - name: symbol
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null
+      - name: status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [MATCH, WARN, BREAK]

@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: int_equity_pairs
+    description: Same-run Yahoo and Alpaca observations paired by symbol and trade date.
+    columns:
+      - name: run_id
+        data_tests:
+          - not_null
+      - name: symbol
+        data_tests:
+          - not_null
+      - name: trade_date
+        data_tests:
+          - not_null

@@ -1,0 +1,8 @@
+reconciliation_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('RECONCILIATION_DB_PATH', 'reconciliation.duckdb') }}"
+      schema: main
+      threads: 1
