@@ -2,9 +2,9 @@
 
 This document translates the Task 1–21 specifications in `local_docs/` into an end-state architecture, an operational workflow, and an implementation dependency map.
 
-Tasks 1–8, the DuckDB portion of Task 12, and Tasks 14–15 represent the implemented
-local equity-control MVP. Tasks 9–11, 13, and 16–21 extend that MVP toward derivatives,
-alerting, real-time monitoring,
+Tasks 1–8, the DuckDB portion of Task 12, and Tasks 14–16 represent the implemented
+local equity-control MVP. Tasks 9–11, 13, and 17–21 extend that MVP toward derivatives,
+alerting, anomaly detection,
 orchestration, containerization, and a final reproducible release. Security is
 an end-to-end acceptance condition rather than a single isolated task.
 
@@ -202,14 +202,15 @@ flowchart LR
 
     classDef complete fill:#d1fae5,stroke:#047857,color:#064e3b
     classDef planned fill:#e0e7ff,stroke:#4338ca,color:#312e81
-    class task1,task2,task3,task4,task5,task6,task7,task8,task12,task14,task15 complete
-    class task9,task10,task11,task13,task16,task17,task18,task19,task20,task21 planned
+    class task1,task2,task3,task4,task5,task6,task7,task8,task12,task14,task15,task16 complete
+    class task9,task10,task11,task13,task17,task18,task19,task20,task21 planned
 ```
 
 Green nodes are implemented, including the DuckDB break-analytics slice of Task
-12, the equity Parquet archive from Task 14, and the dbt transformation layer
-from Task 15. Purple nodes remain on the roadmap. Task 20 extends the existing
-dashboard with ZeroMQ feed and anomaly panels.
+12, the equity Parquet archive from Task 14, the dbt transformation layer from
+Task 15, and the simulated ZeroMQ feed from Task 16. Purple nodes remain on the
+roadmap. Task 20 extends the existing dashboard with ZeroMQ feed and anomaly
+panels.
 
 ## 4. Core Data Contracts
 

@@ -14,6 +14,7 @@ A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes 
 - `MATCH` / `BREAK` status using a configurable close-price tolerance
 - Immutable raw and normalized Parquet archives partitioned by source and run ID
 - Read-only DuckDB dashboard for latest breaks and operational analytics
+- Local ZeroMQ publish/subscribe feed with deterministic simulated equity ticks
 - Private local secret/database permissions and lazy credential loading
 
 ## Run
@@ -60,6 +61,26 @@ Set `RECONCILIATION_DB_PATH` to target another DuckDB file. A successful build
 creates the queryable `main.fct_equity_reconciliation` table with `MATCH`,
 `WARN`, and `BREAK` outcomes. Absolute close differences above `0.01` warn;
 differences above `0.05`, or missing closes, break.
+
+## Run the Real-Time Feed
+
+The initial feed is explicitly simulated and does not require API credentials.
+Start the subscriber in one terminal:
+
+```powershell
+python -m realtime.subscriber --count 10
+```
+
+Then start the publisher in another terminal:
+
+```powershell
+python -m realtime.publisher --count 10
+```
+
+Both commands use `REALTIME_ZMQ_ENDPOINT`, which defaults to the local endpoint
+`tcp://127.0.0.1:5555`. Each JSON tick contains exactly `symbol`, `price`,
+`exchange_timestamp`, `received_timestamp`, and `latency_ms`. Omit `--count` to
+run continuously and stop cleanly with Ctrl+C.
 
 View a one-time reconciliation control-room snapshot:
 
@@ -111,6 +132,8 @@ Ingestion/options_reconciliation.py Yahoo vs. Alpaca option comparison logic
 Dashboard/dashboard.py              Read-only break analytics dashboard
 data_lake.py                         Immutable Parquet archive and replay helpers
 dbt/                                 DuckDB staging and reconciliation models
+realtime/publisher.py                Simulated ZeroMQ equity tick publisher
+realtime/subscriber.py               Validating ZeroMQ tick subscriber
 run_equity_reconciliation.py         Live run and offline replay commands
 security.py                         Local secret and file-permission controls
 ```
