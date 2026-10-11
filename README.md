@@ -15,6 +15,7 @@ A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes 
 - Immutable raw and normalized Parquet archives partitioned by source and run ID
 - Read-only DuckDB dashboard for latest breaks and operational analytics
 - Local ZeroMQ publish/subscribe feed with deterministic simulated equity ticks
+- Explainable prior-price anomaly scoring with a separate annotated-tick feed
 - Non-root Docker Compose batch runner with persistent DuckDB and Parquet state
 - Private local secret/database permissions and lazy credential loading
 
@@ -115,6 +116,26 @@ Both commands use `REALTIME_ZMQ_ENDPOINT`, which defaults to the local endpoint
 `exchange_timestamp`, `received_timestamp`, and `latency_ms`. Omit `--count` to
 run continuously and stop cleanly with Ctrl+C.
 
+To score the simulated feed, start the scorer before the publisher:
+
+```powershell
+python -m reconciliation_engine.realtime.anomaly_scorer --count 10 --threshold-pct 0.1
+```
+
+Then run the publisher in another terminal:
+
+```powershell
+python -m reconciliation_engine.realtime.publisher --count 10
+```
+
+The scorer preserves every raw field and adds `pct_change`, `is_anomaly`, and
+an explanatory `reason`. It republishes annotated ticks to
+`REALTIME_SCORED_ZMQ_ENDPOINT`, which defaults to `tcp://127.0.0.1:5556`.
+The default rule threshold is 1%; the lower `0.1` demo threshold intentionally
+flags a movement in the deterministic simulated sequence. The optional
+`isolation_forest_flags` function supports offline comparison without changing
+the transparent rule used by the live scorer.
+
 View a one-time reconciliation control-room snapshot:
 
 ```powershell
@@ -179,6 +200,7 @@ Automated-reconciliation-engine/
 │   │   ├── duckdb.py
 │   │   └── data_lake.py
 │   └── realtime/                  # ZeroMQ publish/subscribe path
+│       ├── anomaly_scorer.py       # Explainable real-time anomaly scoring
 │       ├── publisher.py
 │       └── subscriber.py
 ├── dbt/                           # Versioned DuckDB SQL transformations

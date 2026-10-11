@@ -10,7 +10,8 @@ The system is built as a set of decoupled microservices. Instead of one large Py
 ### The Microservices:
 1. **Module A (Ingestion Engine):** Connects to external APIs and WebSockets.
 2. **Module E (The Bus):** The ZeroMQ network layer that distributes data.
-3. **Module F (Machine Learning):** The real-time anomaly predictor.
+3. **Module F (Anomaly Scoring):** An implemented prior-price percentage rule,
+   with an optional offline Isolation Forest comparison.
 4. **Module C (Reconciliation via dbt):** Uses dbt SQL models to compare vendor feeds.
 5. **Module B (Storage Data Lakehouse):** Writes Parquet files and queries via DuckDB.
 6. **Module D (Watchdog):** The alerting system.
@@ -49,11 +50,11 @@ All instrument classes flow through the same pipeline. **Equities/futures** are 
 3.  **Latency Calculation:** The engine extracts the **Exchange Timestamp** from the payload and subtracts it from the **Local Receive Timestamp** to calculate the network latency in milliseconds.
 4.  **Publishing:** The tick (with its calculated latency) is serialized into JSON and pushed onto the **ZeroMQ Publisher Socket**.
 
-### Phase 2: Anomaly Detection (Machine Learning)
-1.  **Subscribing:** The ML Engine is subscribed to the ZeroMQ bus and receives the tick instantly.
-2.  **Feature Extraction:** It calculates rolling metrics (e.g., % change from the last 10 ticks).
-3.  **Prediction:** An **Isolation Forest** model evaluates the tick. If it falls outside the statistical norm, it is flagged as `IS_ANOMALY = True`.
-4.  **Re-Publishing:** The ML Engine pushes the annotated tick back to the bus.
+### Phase 2: Anomaly Detection
+1.  **Subscribing:** The anomaly scorer subscribes to the ZeroMQ bus and receives each tick.
+2.  **Feature Extraction:** It calculates the percentage change from the prior price for each symbol.
+3.  **Prediction:** A configurable, transparent absolute-percentage threshold sets `is_anomaly`; an optional deterministic **Isolation Forest** function supports offline comparison.
+4.  **Re-Publishing:** The scorer preserves the raw fields, adds `pct_change`, `is_anomaly`, and `reason`, then publishes the annotated tick on a separate local endpoint.
 
 ### Phase 3: Historical Batch Ingestion & Reconciliation (Data Engineering Workflow)
 *(This process is orchestrated by **Apache Airflow** and runs daily at Market Close)*

@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 
 ENDPOINT_ENV = "REALTIME_ZMQ_ENDPOINT"
 DEFAULT_ENDPOINT = "tcp://127.0.0.1:5555"
+SCORED_ENDPOINT_ENV = "REALTIME_SCORED_ZMQ_ENDPOINT"
+DEFAULT_SCORED_ENDPOINT = "tcp://127.0.0.1:5556"
 
 
 def get_endpoint() -> str:
@@ -17,6 +19,15 @@ def get_endpoint() -> str:
     endpoint = os.getenv(ENDPOINT_ENV, DEFAULT_ENDPOINT).strip()
     if not endpoint:
         raise ValueError(f"{ENDPOINT_ENV} cannot be empty")
+    return endpoint
+
+
+def get_scored_endpoint() -> str:
+    """Return the endpoint used for anomaly-annotated ticks."""
+    load_dotenv("project.env", override=False)
+    endpoint = os.getenv(SCORED_ENDPOINT_ENV, DEFAULT_SCORED_ENDPOINT).strip()
+    if not endpoint:
+        raise ValueError(f"{SCORED_ENDPOINT_ENV} cannot be empty")
     return endpoint
 
 

@@ -1,13 +1,18 @@
 from datetime import datetime, timedelta, timezone
 import os
 import threading
+import time
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
 import zmq
 
-from reconciliation_engine.realtime import get_endpoint
+from reconciliation_engine.realtime import get_endpoint, get_scored_endpoint
+from reconciliation_engine.realtime.anomaly_scorer import (
+    ANNOTATION_FIELDS,
+    score_and_publish_ticks,
+)
 from reconciliation_engine.realtime.publisher import (
     SIMULATED_PRICES,
     TICK_FIELDS,
@@ -26,6 +31,15 @@ class RealtimeTickContractTests(unittest.TestCase):
             {"REALTIME_ZMQ_ENDPOINT": "tcp://127.0.0.1:6000"},
         ):
             self.assertEqual(get_endpoint(), "tcp://127.0.0.1:6000")
+        load_dotenv.assert_called_once_with("project.env", override=False)
+
+    @patch("reconciliation_engine.realtime.load_dotenv")
+    def test_scored_endpoint_comes_from_the_environment(self, load_dotenv):
+        with patch.dict(
+            os.environ,
+            {"REALTIME_SCORED_ZMQ_ENDPOINT": "tcp://127.0.0.1:6001"},
+        ):
+            self.assertEqual(get_scored_endpoint(), "tcp://127.0.0.1:6001")
         load_dotenv.assert_called_once_with("project.env", override=False)
 
     def test_tick_has_exact_fields_utc_timestamps_and_calculated_latency(self):
@@ -95,6 +109,68 @@ class RealtimeZeroMqIntegrationTests(unittest.TestCase):
         self.assertEqual(len(ticks), 10)
         self.assertTrue(all(set(tick) == set(TICK_FIELDS) for tick in ticks))
         self.assertTrue(all(tick["latency_ms"] >= 0 for tick in ticks))
+
+    def test_scorer_republishes_explained_anomaly(self):
+        raw_endpoint = f"inproc://task-17-raw-{uuid4()}"
+        scored_endpoint = f"inproc://task-17-scored-{uuid4()}"
+        context = zmq.Context()
+        raw_publisher = context.socket(zmq.PUB)
+        scored_subscriber = context.socket(zmq.SUB)
+        raw_publisher.setsockopt(zmq.LINGER, 0)
+        scored_subscriber.setsockopt(zmq.LINGER, 0)
+        scored_subscriber.setsockopt(zmq.SUBSCRIBE, b"")
+        scored_subscriber.setsockopt(zmq.RCVTIMEO, 3000)
+        errors = []
+
+        raw_publisher.bind(raw_endpoint)
+
+        def score():
+            try:
+                score_and_publish_ticks(
+                    raw_endpoint,
+                    scored_endpoint,
+                    threshold_pct=1.0,
+                    count=3,
+                    timeout_ms=3000,
+                    startup_delay_seconds=0.2,
+                    context=context,
+                    output=None,
+                )
+            except Exception as error:  # pragma: no cover - surfaced by assertion
+                errors.append(error)
+
+        scorer_thread = threading.Thread(target=score, daemon=True)
+        scorer_thread.start()
+        scored_subscriber.connect(scored_endpoint)
+        time.sleep(0.3)
+        try:
+            for price in (100.0, 100.5, 102.0):
+                now = datetime.now(timezone.utc)
+                raw_publisher.send_json(
+                    create_tick(
+                        "AAPL",
+                        price,
+                        now - timedelta(milliseconds=5),
+                        now,
+                    )
+                )
+                time.sleep(0.02)
+            annotated = [scored_subscriber.recv_json() for _ in range(3)]
+        finally:
+            scorer_thread.join(timeout=3)
+            raw_publisher.close(linger=0)
+            scored_subscriber.close(linger=0)
+            context.term()
+
+        self.assertFalse(scorer_thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertTrue(all(set(TICK_FIELDS).issubset(item) for item in annotated))
+        self.assertTrue(
+            all(set(ANNOTATION_FIELDS).issubset(item) for item in annotated)
+        )
+        anomalies = [item for item in annotated if item["is_anomaly"]]
+        self.assertEqual(len(anomalies), 1)
+        self.assertIn("exceeded", anomalies[0]["reason"])
 
 
 if __name__ == "__main__":
