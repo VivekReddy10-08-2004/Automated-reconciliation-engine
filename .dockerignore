@@ -1,0 +1,10 @@
+# Deny by default: the build context contains only application source and the
+# batch dependency manifest. Secrets, data, databases, logs, and Git metadata
+# therefore cannot be copied into an image layer accidentally.
+**
+!reconciliation_engine/
+!reconciliation_engine/**
+!orchestration/
+!orchestration/docker/
+!orchestration/docker/Dockerfile
+!orchestration/docker/requirements-batch.txt

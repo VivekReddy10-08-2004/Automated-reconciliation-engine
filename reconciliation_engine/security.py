@@ -36,7 +36,12 @@ def validate_private_file(path: str | Path) -> Path:
 
 
 def load_alpaca_credentials(env_path: str | Path = "project.env") -> tuple[str, str]:
-    """Load Alpaca credentials without exposing their values in logs or errors."""
+    """Load credentials from runtime environment or a private local env file."""
+    api_key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID")
+    secret_key = os.getenv("ALPACA_SECRET_KEY") or os.getenv("APCA_API_SECRET_KEY")
+    if api_key and secret_key:
+        return api_key, secret_key
+
     secret_file = validate_private_file(env_path)
     load_dotenv(secret_file, override=False)
     api_key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID")

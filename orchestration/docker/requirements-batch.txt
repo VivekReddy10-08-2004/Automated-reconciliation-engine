@@ -1,0 +1,6 @@
+alpaca-py==0.43.4
+duckdb==1.5.3
+pandas==3.0.3
+python-dotenv==1.2.2
+requests==2.34.2
+yfinance==1.4.1

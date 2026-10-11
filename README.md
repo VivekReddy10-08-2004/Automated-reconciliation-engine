@@ -15,6 +15,7 @@ A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes 
 - Immutable raw and normalized Parquet archives partitioned by source and run ID
 - Read-only DuckDB dashboard for latest breaks and operational analytics
 - Local ZeroMQ publish/subscribe feed with deterministic simulated equity ticks
+- Non-root Docker Compose batch runner with persistent DuckDB and Parquet state
 - Private local secret/database permissions and lazy credential loading
 
 ## Run
@@ -61,6 +62,38 @@ Set `RECONCILIATION_DB_PATH` to target another DuckDB file. A successful build
 creates the queryable `main.fct_equity_reconciliation` table with `MATCH`,
 `WARN`, and `BREAK` outcomes. Absolute close differences above `0.01` warn;
 differences above `0.05`, or missing closes, break.
+
+## Run with Docker Compose
+
+Docker runs only the one-shot batch pipeline. Airflow and the real-time feed are
+intentionally outside this image.
+
+1. Create `project.env` from `project.env.example`, replace the two Alpaca
+   placeholders, and optionally set `WEBHOOK_URL`.
+2. Build the minimal batch image:
+
+```sh
+docker compose -f orchestration/docker/compose.yaml build --pull
+```
+
+3. Run one reconciliation:
+
+```sh
+docker compose -f orchestration/docker/compose.yaml run --rm batch
+```
+
+The named volume `automated-reconciliation-engine-state` retains
+`reconciliation.duckdb` and the complete `data/` archive after the container
+exits. Confirm persisted run count with:
+
+```sh
+docker compose -f orchestration/docker/compose.yaml run --rm \
+  --entrypoint python batch -c "import duckdb; c=duckdb.connect('/app/state/reconciliation.duckdb', read_only=True); print(c.execute('select count(*) from pipeline_runs').fetchone()[0])"
+```
+
+Credentials are supplied from `project.env` at container runtime. The
+deny-by-default `.dockerignore` prevents that file, local data, Git history, and
+developer environments from entering the image build context.
 
 ## Run the Real-Time Feed
 
@@ -153,7 +186,8 @@ Automated-reconciliation-engine/
 │   └── tests/
 ├── tests/                         # Offline unit and integration tests
 ├── docs/                          # Architecture, operations, and security
-├── orchestration/                 # Future Airflow and deployment definitions
+├── orchestration/                 # Deployment and future scheduling
+│   └── docker/                    # Batch image and Compose definition
 ├── project.env.example            # Safe configuration template
 ├── pyproject.toml                 # Python project and dependencies
 └── README.md
