@@ -16,6 +16,18 @@ and confirm that `project.env` contains the required Alpaca credentials:
 python -m reconciliation_engine.batch
 ```
 
+The scheduled reconciliation universe comes from `project.env`:
+
+```env
+RECONCILIATION_SYMBOLS=AAPL,MSFT,NVDA
+```
+
+Change that value to change the next scheduled run without editing the task or
+cron definition. For an isolated manual run, `--symbol MSFT` overrides the
+environment; repeat `--symbol` to reconcile multiple equities. The command
+normalizes, validates, and de-duplicates the universe before contacting Yahoo or
+Alpaca.
+
 Clean runs remain silent. Runs with breaks and failed runs use the Task 11
 notification behavior. If `WEBHOOK_URL` is absent, the notification is printed
 to the process output.

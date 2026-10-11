@@ -40,7 +40,8 @@ flowchart TD
 - Check data source connectivity.
 - Create `run_id` and start timestamp.
 - Load the instrument universe:
-  - **Equities**: ticker list (e.g., AAPL, MSFT, SPY).
+  - **Equities**: the validated `RECONCILIATION_SYMBOLS` ticker list (e.g.,
+    AAPL, MSFT, SPY), optionally overridden by repeatable `--symbol` arguments.
   - **Options**: underlyings to expand into chains (e.g., SPY), optionally filtered to near-the-money strikes and the front few expiries to keep volume manageable.
   - **Futures**: continuous-contract symbols (e.g., ES=F, CL=F, GC=F).
   - **Swaps / Forwards (OTC)**: the trade blotter exported from the internal booking system (there is no listed universe to fetch).

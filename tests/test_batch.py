@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import DEFAULT, patch
+from unittest.mock import DEFAULT, call, patch
 
 import pandas as pd
 
@@ -44,6 +44,8 @@ class BatchFailureHandlingTests(unittest.TestCase):
 
                 self.assertEqual(summary["status"], expected_status)
                 self.assertEqual(summary["break_count"], expected_breaks)
+                self.assertEqual(summary["symbols"], ["AAPL"])
+                mocks["fetch_equity_sources"].assert_called_once_with(("AAPL",))
                 mocks["send_run_notification"].assert_called_once_with(summary)
 
     @patch("reconciliation_engine.batch.send_run_notification")
@@ -63,6 +65,73 @@ class BatchFailureHandlingTests(unittest.TestCase):
         self.assertEqual(summary["break_count"], 0)
         self.assertTrue(summary["run_id"])
         send_run_notification.assert_called_once()
+
+
+class BatchSymbolConfigurationTests(unittest.TestCase):
+    def test_cli_symbols_are_normalized_deduplicated_and_can_be_comma_separated(self):
+        symbols = batch.get_reconciliation_symbols(
+            [" msft ", "AAPL,nvda", "MSFT"]
+        )
+
+        self.assertEqual(symbols, ("MSFT", "AAPL", "NVDA"))
+
+    def test_library_caller_can_pass_one_symbol_as_a_string(self):
+        self.assertEqual(batch.normalize_symbols("msft"), ("MSFT",))
+
+    @patch("reconciliation_engine.batch.load_dotenv")
+    def test_environment_symbols_are_used_when_cli_is_omitted(self, load_dotenv):
+        with patch.dict(
+            "os.environ",
+            {"RECONCILIATION_SYMBOLS": "spy, brk.b"},
+            clear=False,
+        ):
+            symbols = batch.get_reconciliation_symbols()
+
+        self.assertEqual(symbols, ("SPY", "BRK.B"))
+        load_dotenv.assert_called_once_with("project.env", override=False)
+
+    def test_invalid_symbol_is_rejected_before_provider_calls(self):
+        with self.assertRaisesRegex(ValueError, "Invalid equity symbol"):
+            batch.normalize_symbols(["AAPL;DROP TABLE"])
+
+    @patch("reconciliation_engine.batch.fetch_stock_bars")
+    @patch("reconciliation_engine.batch.fetch_yahoo_bars")
+    def test_fetches_every_configured_symbol_from_both_providers(
+        self,
+        fetch_yahoo_bars,
+        fetch_stock_bars,
+    ):
+        def provider_frame(symbol, *args, **kwargs):
+            return pd.DataFrame(
+                {
+                    "symbol": [symbol],
+                    "trade_date": ["2026-10-09"],
+                    "open": [100.0],
+                    "high": [101.0],
+                    "low": [99.0],
+                    "close": [100.5],
+                    "volume": [1000],
+                }
+            )
+
+        fetch_yahoo_bars.side_effect = provider_frame
+        fetch_stock_bars.side_effect = provider_frame
+
+        yahoo, alpaca = batch.fetch_equity_sources(["MSFT", "NVDA"])
+
+        self.assertEqual(yahoo["symbol"].tolist(), ["MSFT", "NVDA"])
+        self.assertEqual(alpaca["symbol"].tolist(), ["MSFT", "NVDA"])
+        self.assertEqual(
+            fetch_yahoo_bars.call_args_list,
+            [
+                call("MSFT", period="5d", interval="1d"),
+                call("NVDA", period="5d", interval="1d"),
+            ],
+        )
+        self.assertEqual(
+            [item.args[0] for item in fetch_stock_bars.call_args_list],
+            ["MSFT", "NVDA"],
+        )
 
 
 if __name__ == "__main__":

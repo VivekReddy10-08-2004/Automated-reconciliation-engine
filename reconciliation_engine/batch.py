@@ -1,9 +1,13 @@
 import argparse
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
+import re
+from collections.abc import Iterable
 from uuid import uuid4
 
 import pandas as pd
+from dotenv import load_dotenv
 
 from alpaca.data.timeframe import TimeFrame
 
@@ -30,19 +34,76 @@ from reconciliation_engine.storage.duckdb import (
 )
 
 
-def fetch_equity_sources() -> tuple[pd.DataFrame, pd.DataFrame]:
+SYMBOLS_ENV = "RECONCILIATION_SYMBOLS"
+DEFAULT_RECONCILIATION_SYMBOLS = ("AAPL",)
+SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
+
+
+def normalize_symbols(values: Iterable[str]) -> tuple[str, ...]:
+    """Normalize, validate, and de-duplicate configured equity symbols."""
+    if isinstance(values, str):
+        values = [values]
+    symbols: list[str] = []
+    for value in values:
+        for candidate in str(value).split(","):
+            symbol = candidate.strip().upper()
+            if not symbol:
+                continue
+            if not SYMBOL_PATTERN.fullmatch(symbol):
+                raise ValueError(
+                    f"Invalid equity symbol {candidate!r}; use 1-15 letters, "
+                    "numbers, dots, or hyphens"
+                )
+            if symbol not in symbols:
+                symbols.append(symbol)
+    if not symbols:
+        raise ValueError("At least one reconciliation symbol is required")
+    return tuple(symbols)
+
+
+def get_reconciliation_symbols(
+    configured_symbols: Iterable[str] | None = None,
+) -> tuple[str, ...]:
+    """Resolve CLI symbols first, then project.env, then the demo default."""
+    if configured_symbols is not None:
+        return normalize_symbols(configured_symbols)
+
+    load_dotenv("project.env", override=False)
+    environment_value = os.getenv(SYMBOLS_ENV)
+    if environment_value is None:
+        return DEFAULT_RECONCILIATION_SYMBOLS
+    return normalize_symbols([environment_value])
+
+
+def fetch_equity_sources(
+    symbols: Iterable[str] = DEFAULT_RECONCILIATION_SYMBOLS,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Fetch the two provider datasets used by the daily equity control."""
+    selected_symbols = normalize_symbols(symbols)
     start = datetime.now(timezone.utc) - timedelta(days=5)
     end = datetime.now(timezone.utc)
 
-    yahoo_bars = fetch_yahoo_bars("AAPL", period="5d", interval="1d")
-    alpaca_bars = fetch_stock_bars("AAPL", start, end, TimeFrame.Day)
-    return yahoo_bars, alpaca_bars
+    yahoo_frames = [
+        fetch_yahoo_bars(symbol, period="5d", interval="1d")
+        for symbol in selected_symbols
+    ]
+    alpaca_frames = [
+        fetch_stock_bars(symbol, start, end, TimeFrame.Day)
+        for symbol in selected_symbols
+    ]
+    return (
+        pd.concat(yahoo_frames, ignore_index=True),
+        pd.concat(alpaca_frames, ignore_index=True),
+    )
 
 
-def reconciliation() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def reconciliation(
+    symbols: Iterable[str] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Fetch and reconcile data without persistence (kept for library callers)."""
-    yahoo_bars, alpaca_bars = fetch_equity_sources()
+    yahoo_bars, alpaca_bars = fetch_equity_sources(
+        get_reconciliation_symbols(symbols)
+    )
 
     reconciliation_df = reconcile_equity_bars(yahoo_bars, alpaca_bars)
     return yahoo_bars, alpaca_bars, reconciliation_df
@@ -82,14 +143,16 @@ def replay_archived_run(
 def main(
     db_path: str = "reconciliation.duckdb",
     data_root: str | Path = "data",
+    symbols: Iterable[str] | None = None,
 ) -> dict:
+    selected_symbols = get_reconciliation_symbols(symbols)
     run_id = str(uuid4())
     started_at = datetime.now(timezone.utc).isoformat()
     break_count = 0
 
     try:
         initialize_database(db_path)
-        yahoo_raw, alpaca_raw = fetch_equity_sources()
+        yahoo_raw, alpaca_raw = fetch_equity_sources(selected_symbols)
 
         yahoo_bars = archive_equity_source(
             yahoo_raw,
@@ -152,10 +215,12 @@ def main(
             "run_id": run_id,
             "status": run_status,
             "break_count": break_count,
+            "symbols": list(selected_symbols),
         }
 
         print(
             f"Run ID: {run_id} | "
+            f"Symbols: {','.join(selected_symbols)} | "
             f"Yahoo rows: {len(yahoo_bars)} | "
             f"Alpaca rows: {len(alpaca_bars)} | "
             f"MATCH: {match_count} | "
@@ -172,6 +237,7 @@ def main(
             "run_id": run_id,
             "status": "FAILED",
             "break_count": break_count,
+            "symbols": list(selected_symbols),
         }
         send_run_notification(failed_summary)
         raise
@@ -187,6 +253,15 @@ if __name__ == "__main__":
     parser.add_argument("--db", default="reconciliation.duckdb")
     parser.add_argument("--data-root", type=Path, default=Path("data"))
     parser.add_argument(
+        "--symbol",
+        dest="symbols",
+        action="append",
+        help=(
+            "Equity symbol to reconcile; repeat the option or use comma-separated "
+            "values. Overrides RECONCILIATION_SYMBOLS."
+        ),
+    )
+    parser.add_argument(
         "--replay-run-id",
         help="Recompute a report from normalized Parquet files without API calls",
     )
@@ -201,4 +276,4 @@ if __name__ == "__main__":
             f"BREAK: {(replay['status'] == 'BREAK').sum()}"
         )
     else:
-        main(arguments.db, arguments.data_root)
+        main(arguments.db, arguments.data_root, arguments.symbols)

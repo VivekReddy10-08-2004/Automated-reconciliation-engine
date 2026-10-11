@@ -21,7 +21,8 @@ A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes 
 
 ## Run
 
-1. Create `project.env` with `ALPACA_API_KEY` and `ALPACA_SECRET_KEY`.
+1. Create `project.env` with `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, and the
+   desired `RECONCILIATION_SYMBOLS` universe.
 2. Install dependencies with `pip install -r requirements.txt`.
 3. Run the reconciliation demo from the project root:
 
@@ -29,9 +30,24 @@ A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes 
 python -m reconciliation_engine.batch
 ```
 
-The command compares recent daily AAPL bars, saves the audit trail to DuckDB,
-and archives Yahoo, Alpaca, and reconciliation data under `data/`. Each archive
+The command compares recent daily bars for the comma-separated symbols in
+`RECONCILIATION_SYMBOLS` (default: `AAPL`), saves the audit trail to DuckDB, and
+archives Yahoo, Alpaca, and reconciliation data under `data/`. Each archive
 contains its `run_id` and an existing run file is never overwritten.
+
+Override the configured universe for one run with one or more `--symbol`
+arguments:
+
+```powershell
+python -m reconciliation_engine.batch --symbol MSFT
+python -m reconciliation_engine.batch --symbol AAPL --symbol MSFT --symbol NVDA
+python -m reconciliation_engine.batch --symbol AAPL,MSFT,NVDA
+```
+
+CLI symbols take precedence over `RECONCILIATION_SYMBOLS`. Symbols are
+case-normalized, de-duplicated, and validated before either provider is called.
+The dashboard requires no separate configuration: it reads the instruments
+stored by the selected reconciliation run.
 
 Replay a saved run without calling Yahoo or Alpaca:
 
@@ -70,7 +86,7 @@ Docker runs only the one-shot batch pipeline. Airflow and the real-time feed are
 intentionally outside this image.
 
 1. Create `project.env` from `project.env.example`, replace the two Alpaca
-   placeholders, and optionally set `WEBHOOK_URL`.
+   placeholders, set `RECONCILIATION_SYMBOLS`, and optionally set `WEBHOOK_URL`.
 2. Build the minimal batch image:
 
 ```sh
@@ -81,6 +97,13 @@ docker compose -f orchestration/docker/compose.yaml build --pull
 
 ```sh
 docker compose -f orchestration/docker/compose.yaml run --rm batch
+```
+
+For a one-off Docker override without editing `project.env`:
+
+```sh
+docker compose -f orchestration/docker/compose.yaml run --rm \
+  -e RECONCILIATION_SYMBOLS=MSFT,NVDA batch
 ```
 
 The named volume `automated-reconciliation-engine-state` retains
