@@ -69,13 +69,14 @@ def reconcile_equity_bars(
     yahoo_bars["trade_date"] = pd.to_datetime(yahoo_bars["trade_date"]).dt.date
     alpaca_bars["trade_date"] = pd.to_datetime(alpaca_bars["trade_date"]).dt.date
 
-    # Merge the two DataFrames on trade_date
+    # Preserve one-sided observations. Missing provider data is an actionable
+    # control break, not a row that should silently disappear.
     merged = pd.merge(
         yahoo_bars,
         alpaca_bars,
         on=["symbol", "trade_date"],
         suffixes=("_yahoo", "_alpaca"),
-        how="inner"
+        how="outer",
     )
 
     merged = merged.rename(columns={

@@ -1,14 +1,14 @@
 # System Design & Workflow
 
-This document outlines the architecture, data flow, and process logic for the **Automated Financial Reconciliation Engine**. The system is designed to mimic enterprise trading infrastructure, focusing on decoupling, real-time messaging, and data integrity.
+This document outlines the architecture, data flow, and release boundary for the **Automated Financial Reconciliation Engine**. The repository contains a persisted equity batch control and an independent, simulated real-time demonstration.
 
 ---
 
 ## 1. High-Level Architecture
-The system is built as a set of decoupled microservices. Instead of one large Python script, different "engines" run independently and communicate via a fast message broker (**ZeroMQ**).
+The system is a local Python application with independently runnable batch, real-time, scoring, and dashboard processes. Only the simulated real-time path communicates over **ZeroMQ**; the batch path persists to Parquet and DuckDB.
 
 ### The Microservices:
-1. **Module A (Ingestion Engine):** Connects to external APIs and WebSockets.
+1. **Module A (Ingestion Engine):** Connects to Yahoo and Alpaca HTTP APIs. A live WebSocket source is not implemented.
 2. **Module E (The Bus):** The ZeroMQ network layer that distributes data.
 3. **Module F (Anomaly Scoring):** An implemented prior-price percentage rule,
    with an optional offline Isolation Forest comparison.
@@ -16,37 +16,37 @@ The system is built as a set of decoupled microservices. Instead of one large Py
 5. **Module B (Storage Data Lakehouse):** Writes Parquet files and queries via DuckDB.
 6. **Module D (Watchdog):** The alerting system.
 7. **Module G (CLI Control-Room Dashboard):** An implemented read-only `rich` dashboard combining DuckDB reconciliation state with a ZeroMQ anomaly feed (see Section 5).
-8. **Module O (Orchestration):** Apache Airflow DAGs to run the batch ETL workflow.
-9. **Infrastructure (Docker):** The entire stack is containerized using Docker and spun up via `docker-compose`.
+8. **Module O (Orchestration, planned):** No Apache Airflow DAG is included yet; Windows Task Scheduler and Ubuntu cron are documented.
+9. **Infrastructure (Docker):** Docker Compose packages only the one-shot batch runner with persistent state.
 10. **Security Control Plane:** Secrets, access roles, encryption, retention, masking, and audit events apply across every module.
 
 ---
 
-## 2. Data Sources (100% Free Tier)
-To ensure the project is fully open and free, we utilize:
+## 2. Data Sources
+The current integrations are:
 *   **Source A (Baseline):** `yfinance` (Yahoo Finance) for end-of-day equity prices and **options chains** (`Ticker.option_chain()` exposes calls/puts with strike, expiry, bid/ask, implied volatility, open interest).
-*   **Source B (Cross-Reference):** Alpaca REST API (free tier) for historical reconciliation of both **equities** (`StockHistoricalDataClient`) and **derivatives** (`OptionHistoricalDataClient` / `OptionChainRequest`).
-*   **Source C (Real-Time):** Alpaca IEX WebSocket (free real-time US equities stream) for latency monitoring and ML ingestion.
+*   **Source B (Cross-Reference):** Alpaca REST API for historical equities (`StockHistoricalDataClient`) and option snapshots (`OptionHistoricalDataClient` / `OptionChainRequest`). Equity batch requests explicitly use IEX; option coverage depends on account entitlement.
+*   **Real-time demo input:** deterministic simulated equity ticks. No Alpaca WebSocket is connected in this release.
 
 **Derivatives** here means **options, futures, swaps, and forwards**. Sourcing differs by instrument because not everything has a free market feed:
 
 | Instrument | Free source | Notes |
 | --- | --- | --- |
 | Equities | Alpaca + yfinance | OHLCV bars. |
-| Options | Alpaca + yfinance | Full OPRA chains. |
+| Options | Alpaca + yfinance | Coverage depends on Alpaca entitlement; free indicative data must not be described as full OPRA. |
 | Futures (`reconciliation_engine/ingestion/futures.py`) | yfinance (`ES=F`, `CL=F`, …) | Continuous-contract OHLCV. Alpaca has no free futures feed. |
 | Swaps (`reconciliation_engine/ingestion/swaps.py`) | Synthetic blotter + yfinance yields (`^IRX`, `^TNX`) | OTC: no public feed. Internal book marked vs a free reference rate. |
 | Forwards (`reconciliation_engine/ingestion/forwards.py`) | Synthetic blotter + yfinance FX spot | OTC: booked forward marked vs a covered-interest-parity forward derived from live spot. |
 
-All instrument classes flow through the same pipeline. **Equities/futures** are keyed by `(symbol, trade_date)`; **options** by the full OPRA identity `(underlying, expiry, strike, option_type, trade_date)`; **swaps/forwards** by `(trade_id, trade_date)` since OTC trades are identified by booking reference, not a listed symbol.
+Only equities currently flow through the persisted batch pipeline. Options have offline-tested ingestion and reconciliation functions. Futures, swaps, and forwards have ingestion adapters, while their unified Task 10 control reports remain planned. See [Data Sources](../DATA_SOURCES.md) for exact provenance and limitations.
 
 ---
 
 ## 3. The Process & Workflow
 
 ### Phase 1: Real-Time Ingestion & Latency Monitoring
-1.  **WebSocket Connection:** The Ingestion Engine connects to a live WebSocket feed (e.g., Binance crypto feed).
-2.  **Packet Arrival:** A trade "tick" arrives.
+1.  **Simulation:** A deterministic local publisher creates an equity tick.
+2.  **Packet Arrival:** The tick carries controlled exchange and receive timestamps.
 3.  **Latency Calculation:** The engine extracts the **Exchange Timestamp** from the payload and subtracts it from the **Local Receive Timestamp** to calculate the network latency in milliseconds.
 4.  **Publishing:** The tick (with its calculated latency) is serialized into JSON and pushed onto the **ZeroMQ Publisher Socket**.
 
@@ -57,29 +57,24 @@ All instrument classes flow through the same pipeline. **Equities/futures** are 
 4.  **Re-Publishing:** The scorer preserves the raw fields, adds `pct_change`, `is_anomaly`, and `reason`, then publishes the annotated tick on a separate local endpoint.
 
 ### Phase 3: Historical Batch Ingestion & Reconciliation (Data Engineering Workflow)
-*(This process is orchestrated by **Apache Airflow** and runs daily at Market Close)*
+*(This process is run manually or by the documented local OS scheduler. Airflow is planned.)*
 1.  **Batch Fetch:** The Ingestion Engine requests, from both Source A (Yahoo) and Source B (Alpaca):
-    *   the daily closing price for each equity in the universe (e.g., `AAPL`), and
-    *   the **options chain** for each underlying (e.g., the `SPY` chain), capturing per-contract `close`, `bid`, `ask`, `volume`, and `open_interest`.
+    *   recent daily OHLCV bars for each configured equity.
 2.  **Parquet Storage (Data Lake):** All payloads are saved as `.parquet` files (partitioned by instrument type) instead of being loaded directly into memory or a transactional DB.
 3.  **dbt Transformation:** A `dbt` project runs against **DuckDB**. It reads the Parquet files as sources.
-4.  **The Auditor SQL Models:** Two `dbt` models run the cross-reference:
-    *   **Equities:** join the two sources on `(Ticker, Date)` and calculate `abs(Source_A_Price - Source_B_Price)`.
-    *   **Derivatives:** join on the full contract key `(underlying, expiry, strike, option_type, Date)` and calculate the delta on the contract `close` (with the bid/ask midpoint as a fallback when last-trade prices are stale).
-5.  **Break Detection:** If a delta exceeds our acceptable threshold, `dbt` flags a "Reconciliation Break" in the final transformed table. Options breaks additionally record the contract identity so the alert is actionable.
+4.  **The Auditor SQL Models:** The current dbt project joins equity sources on `(run_id, symbol, trade_date)` and calculates close and volume differences.
+5.  **Break Detection:** dbt classifies equity rows as `MATCH`, `WARN`, or `BREAK`. One-sided provider observations are retained and break.
 
 ### Phase 4: Storage & Alerting
-1.  **Data Lakehouse Architecture:** All raw ticks, anomalies, and reconciliation states are stored locally as Parquet files and queried via DuckDB, demonstrating modern DE storage patterns.
-2.  **The Watchdog:** A separate script monitors the database and the message bus. If it detects an anomaly, a high-latency spike, or a reconciliation break, it triggers an HTTP POST request to the **Telegram Bot API**.
-3.  **Notification:** The developer receives a push notification on their phone:
-    *   *Equity, e.g., "⚠️ ALERT: Reconciliation Break on AAPL. Yahoo Finance: $150.00 | Alpaca: $150.75"*
-    *   *Derivative, e.g., "⚠️ ALERT: Options Break on SPY 2024-12-20 C500. Yahoo Finance: $12.40 | Alpaca: $12.95"*
+1.  **Batch evidence:** Equity provider payloads, normalized bars, and reconciliation results are archived as Parquet; run, staging, result, and exception rows are stored in DuckDB.
+2.  **Notification:** The batch sends a generic webhook summary only for `FAILED` or `SUCCESS_WITH_BREAKS`; without a webhook it prints the same non-sensitive summary.
+3.  **Current limit:** Real-time ticks and anomaly decisions are not persisted and do not trigger notifications.
 
 ---
 
 ## 4. Why This Architecture Matters
 *   **Fault Isolation:** If the Database goes down, the Ingestion Engine and Message Bus stay up. The system doesn't crash completely.
-*   **Scalability:** Because we use ZeroMQ (Pub/Sub), we can add 5 more data sources tomorrow without rewriting the Storage Engine. The Storage Engine just subscribes to new topics.
+*   **Extensibility:** ZeroMQ separates the simulated publisher, scorer, and dashboard subscriber, while canonical batch schemas separate provider adapters from reconciliation logic.
 *   **Observability:** The explicit tracking of latency and breaks proves an understanding of enterprise support operations.
 
 ---

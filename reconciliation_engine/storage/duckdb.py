@@ -3,6 +3,41 @@ import pandas as pd
 
 from reconciliation_engine.security import restrict_file_permissions
 
+
+def _migrate_equity_staging_primary_key(conn: duckdb.DuckDBPyConnection) -> None:
+    """Add symbol to the business key used by databases from older releases."""
+    constraint = conn.execute(
+        """
+        SELECT constraint_text
+        FROM duckdb_constraints()
+        WHERE table_name = 'equity_bars_staging'
+          AND constraint_type = 'PRIMARY KEY'
+        """
+    ).fetchone()
+    if constraint is None or "symbol" in constraint[0].lower():
+        return
+
+    conn.execute(
+        """
+        CREATE TABLE equity_bars_staging_v2 (
+            symbol VARCHAR,
+            run_id VARCHAR,
+            source VARCHAR,
+            timestamp TIMESTAMP,
+            open FLOAT,
+            high FLOAT,
+            low FLOAT,
+            close FLOAT,
+            volume BIGINT,
+            PRIMARY KEY (run_id, source, symbol, timestamp),
+            FOREIGN KEY (run_id) REFERENCES pipeline_runs(run_id)
+        )
+        """
+    )
+    conn.execute("INSERT INTO equity_bars_staging_v2 SELECT * FROM equity_bars_staging")
+    conn.execute("DROP TABLE equity_bars_staging")
+    conn.execute("ALTER TABLE equity_bars_staging_v2 RENAME TO equity_bars_staging")
+
 def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
     with duckdb.connect(db_path) as conn:
 
@@ -36,11 +71,12 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
                 low FLOAT,
                 close FLOAT,
                 volume BIGINT,
-                PRIMARY KEY (run_id, source, timestamp),
+                PRIMARY KEY (run_id, source, symbol, timestamp),
                 FOREIGN KEY (run_id) REFERENCES pipeline_runs(run_id)
             )
             """
         )
+        _migrate_equity_staging_primary_key(conn)
 
         #equity reconciliation results table
         conn.execute(

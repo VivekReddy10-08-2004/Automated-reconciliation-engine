@@ -2,6 +2,57 @@
 
 A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes both sources into one schema, and flags cross-source closing-price differences.
 
+```text
+Yahoo + Alpaca -> normalize -> DuckDB + Parquet -> reconcile -> exceptions/notification
+                                      |
+                                      +-> dbt equity facts -> read-only dashboard
+
+simulated ticks -> ZeroMQ -> anomaly scorer -> ZeroMQ -> read-only dashboard
+```
+
+The supported release is intentionally honest about its boundary: the equity
+batch and simulated real-time paths are runnable; unified derivative controls
+and Airflow orchestration remain planned. See the [operator runbook](docs/RUNBOOK.md)
+for end-to-end commands and failure handling.
+
+## Visual Walkthrough
+
+### 1. Run the batch control
+
+```sh
+python -m reconciliation_engine.batch --symbol AAPL
+```
+
+The command fetches both providers, reconciles their observations, stores one
+auditable `run_id`, and creates exceptions for breaks. This verified example
+produced one match and four breaks:
+
+![DuckDB audit evidence showing the stored run, staging rows, and open exceptions](docs/release_evidence/duckdb-audit.svg)
+
+### 2. Start the live control room
+
+Run the scorer, dashboard, and simulated publisher in separate terminals as
+shown in [Run the Real-Time Feed](#run-the-real-time-feed). The healthy view
+combines the latest DuckDB batch state with annotated ZeroMQ ticks:
+
+![Control-room dashboard with batch and real-time panels available](docs/dashboard_demos/both-available.svg)
+
+### 3. Recognize degraded operation
+
+The two panels fail independently, so an operator can immediately distinguish
+a database problem from a real-time feed problem.
+
+**Batch unavailable:** the live tick panel remains usable.
+
+![Dashboard showing batch data unavailable while real-time data remains visible](docs/dashboard_demos/batch-unavailable.svg)
+
+**Real-time feed unavailable:** the stored batch panel remains usable.
+
+![Dashboard showing real-time data unavailable while batch data remains visible](docs/dashboard_demos/realtime-unavailable.svg)
+
+These are synthetic, non-sensitive captures. The exact verification commands
+and results are recorded in [Release Evidence](docs/RELEASE_EVIDENCE.md).
+
 ## Current MVP
 
 - Normalized Yahoo Finance equity bars: `symbol, trade_date, open, high, low, close, volume`
@@ -21,10 +72,18 @@ A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes 
 
 ## Run
 
-1. Create `project.env` with `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, and the
-   desired `RECONCILIATION_SYMBOLS` universe.
+1. Copy `project.env.example` to `project.env`, add `ALPACA_API_KEY` and
+   `ALPACA_SECRET_KEY`, and set the desired `RECONCILIATION_SYMBOLS` universe.
+   On POSIX systems, run `chmod 600 project.env`.
 2. Install dependencies with `pip install -r requirements.txt`.
-3. Run the reconciliation demo from the project root:
+3. Run the offline release check. It validates imports, configuration, local
+   endpoints, and a temporary DuckDB schema without fetching market data:
+
+```powershell
+python -m reconciliation_engine.smoke
+```
+
+4. Run the reconciliation demo from the project root:
 
 ```powershell
 python -m reconciliation_engine.batch
@@ -68,6 +127,9 @@ Run the offline reconciliation tests without API credentials or network access:
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+The Python and dbt controls preserve observations available from only one
+provider and classify them as breaks instead of silently dropping them.
 
 Build the SQL transformation layer against the local DuckDB file:
 
@@ -183,7 +245,7 @@ seconds are bounded to 0.5 seconds.
 | Batch reconciliation | Did the control complete, what matched/warned/broke, and which five breaks are largest? |
 | Real-time anomaly feed | What was the latest tick and latency, and were recent movements anomalous? |
 
-Start the task 17 scorer and task 16 publisher as shown above to populate the
+Start the anomaly scorer and simulated publisher as shown above to populate the
 live panel. See [Dashboard degraded-mode demonstrations](docs/DASHBOARD_DEMO.md)
 for captured examples of both panels available and each independent failure.
 
@@ -203,6 +265,8 @@ weekdays, after the regular US equity-market close.
 - If a key may have been exposed, revoke or rotate it at Alpaca; changing the local file does not invalidate a copied key.
 
 See [docs/DATA_SECURITY.md](docs/DATA_SECURITY.md) for the threat model and production controls.
+See [DATA_SOURCES.md](DATA_SOURCES.md) for provider coverage, entitlements,
+synthetic inputs, and licensing caveats.
 
 ## Project Structure
 
@@ -213,6 +277,7 @@ Automated-reconciliation-engine/
 │   ├── dashboard.py               # Read-only reconciliation dashboard
 │   ├── notifications.py           # Break and failure notifications
 │   ├── security.py                # Credentials and file permissions
+│   ├── smoke.py                   # Offline release-readiness checks
 │   ├── ingestion/                 # Provider adapters and normalization
 │   │   ├── alpaca_equities.py
 │   │   ├── alpaca_options.py
@@ -237,6 +302,7 @@ Automated-reconciliation-engine/
 │   └── tests/
 ├── tests/                         # Offline unit and integration tests
 ├── docs/                          # Architecture, operations, and security
+│   └── RUNBOOK.md                 # End-to-end operator and release runbook
 ├── orchestration/                 # Deployment and future scheduling
 │   └── docker/                    # Batch image and Compose definition
 ├── project.env.example            # Safe configuration template
@@ -249,7 +315,7 @@ belong inside `dbt/`; automated checks belong inside `tests/`; and operational
 guidance belongs inside `docs/`. Runtime databases, Parquet data, logs, virtual
 environments, and generated dbt artifacts stay local through `.gitignore`.
 See [Codebase Organization](docs/CODEBASE_ORGANIZATION.md) for the placement
-rules inherited by every project task.
+rules used throughout the project.
 
 ## Options Data Availability
 
@@ -259,8 +325,12 @@ When either provider returns no option contracts, the reconciliation function re
 
 ## Planned Next Steps
 
-- Extend DuckDB/Parquet/dbt coverage to options and the remaining derivative controls
+- Add futures quality reporting and swap/forward booked-versus-market controls
+- Add an idempotent Airflow DAG with documented task-log inspection
+- Extend DuckDB/Parquet/dbt coverage to options and derivative controls
 - Add a live option reconciliation command with an explicit unavailable-data message
-- Activate and smoke-test scheduled runs and webhook alerts
 - Add exception aging and owner/SLA analytics
 - Replace local secret files with a managed secret store for deployment
+
+For setup, normal operation, failure scenarios, audit queries, real-time demos,
+Docker, and release verification, follow [docs/RUNBOOK.md](docs/RUNBOOK.md).

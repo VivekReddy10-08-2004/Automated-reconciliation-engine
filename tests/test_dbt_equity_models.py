@@ -133,6 +133,37 @@ class DbtEquityModelTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("source_equity_bars_unique_by_business_key", completed.stdout)
 
+    def test_dbt_preserves_one_sided_provider_observations_as_breaks(self):
+        self._create_source_table(
+            [
+                (
+                    "AAPL", "missing-run", "YAHOO", "2026-10-08",
+                    99, 101, 98, 100, 1000,
+                ),
+                (
+                    "AAPL", "missing-run", "ALPACA", "2026-10-09",
+                    99, 101, 98, 101, 1100,
+                ),
+            ]
+        )
+
+        completed = self._run_dbt("build")
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+        with duckdb.connect(str(self.db_path), read_only=True) as connection:
+            actual = connection.execute(
+                """
+                select trade_date, yahoo_close, alpaca_close, status
+                from fct_equity_reconciliation
+                where run_id = 'missing-run'
+                order by trade_date
+                """
+            ).fetchdf()
+
+        self.assertEqual(actual["status"].tolist(), ["BREAK", "BREAK"])
+        self.assertEqual(actual["yahoo_close"].notna().sum(), 1)
+        self.assertEqual(actual["alpaca_close"].notna().sum(), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

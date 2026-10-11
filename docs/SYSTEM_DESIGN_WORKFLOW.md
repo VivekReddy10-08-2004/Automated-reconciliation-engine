@@ -2,11 +2,13 @@
 
 This document translates the Task 1–21 specifications in `local_docs/` into an end-state architecture, an operational workflow, and an implementation dependency map.
 
-Tasks 1–8, the DuckDB portion of Task 12, Tasks 14–17, and Task 20 represent the implemented
-local equity-control MVP. Task 19 is implemented but awaits a Docker runtime
-verification. Tasks 9–11, 13, 18, and 21 extend the MVP toward derivatives,
-alerting, orchestration, and a final reproducible release. Security is
-an end-to-end acceptance condition rather than a single isolated task.
+Tasks 1–9, 11–17, and 20 represent the implemented local equity-control and
+simulated real-time release. Task 19's batch container is implemented but still
+awaits verification on a Docker host. Task 21 now provides the runbook, offline
+smoke command, and documentation audit, but the full architecture release
+remains gated by the planned derivative controls in Task 10 and Airflow DAG in
+Task 18. Security is an end-to-end acceptance condition rather than a single
+isolated task.
 
 ## 1. End-State System Architecture
 
@@ -203,17 +205,18 @@ flowchart LR
     classDef complete fill:#d1fae5,stroke:#047857,color:#064e3b
     classDef verification fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef planned fill:#e0e7ff,stroke:#4338ca,color:#312e81
-    class task1,task2,task3,task4,task5,task6,task7,task8,task12,task14,task15,task16,task17,task20 complete
-    class task19 verification
-    class task9,task10,task11,task13,task18,task21 planned
+    class task1,task2,task3,task4,task5,task6,task7,task8,task9,task11,task12,task13,task14,task15,task16,task17,task20 complete
+    class task19,task21 verification
+    class task10,task18 planned
 ```
 
-Green nodes are implemented, including the DuckDB break-analytics slice of Task
-12, the equity Parquet archive from Task 14, the dbt transformation layer from
-Task 15, the simulated ZeroMQ feed from Task 16, and the explainable anomaly
-scorer from Task 17, and the fault-isolated live dashboard from Task 20. Task 19
-is amber until its batch image is built and run on a Docker host. Purple nodes
-remain on the roadmap.
+Green nodes are implemented, including offline option reconciliation, local
+notification/scheduling, the DuckDB break-analytics slice of Task 12, the
+equity Parquet and dbt layers, the simulated ZeroMQ feed, the explainable
+anomaly scorer, and the fault-isolated dashboard. Task 19 is amber until its
+batch image is built and run on a Docker host. Task 21 is amber because its
+release verification assets are implemented while Tasks 10 and 18 still gate a
+literal full-architecture release. Purple nodes remain on the roadmap.
 
 ## 4. Core Data Contracts
 

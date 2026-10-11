@@ -23,7 +23,7 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(result.columns.tolist(), RECONCILIATION_COLUMNS)
         self.assertEqual(result["status"].tolist(), ["MATCH", "BREAK"])
 
-    def test_no_overlap_returns_empty_result(self):
+    def test_no_overlap_marks_each_missing_provider_observation_as_a_break(self):
         yahoo = pd.DataFrame({
             "symbol": ["AAPL"],
             "trade_date": ["2026-08-05"],
@@ -39,7 +39,10 @@ class ReconciliationTests(unittest.TestCase):
 
         result = reconcile_equity_bars(yahoo, alpaca)
 
-        self.assertTrue(result.empty)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result["status"].tolist(), ["BREAK", "BREAK"])
+        self.assertEqual(result["yahoo_close"].notna().sum(), 1)
+        self.assertEqual(result["alpaca_close"].notna().sum(), 1)
 
     def test_malformed_input_raises_value_error(self):
         yahoo = pd.DataFrame({
