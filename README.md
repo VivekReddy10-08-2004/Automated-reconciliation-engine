@@ -153,6 +153,7 @@ Automated-reconciliation-engine/
 │   └── tests/
 ├── tests/                         # Offline unit and integration tests
 ├── docs/                          # Architecture, operations, and security
+├── orchestration/                 # Future Airflow and deployment definitions
 ├── project.env.example            # Safe configuration template
 ├── pyproject.toml                 # Python project and dependencies
 └── README.md
@@ -162,6 +163,8 @@ Application code belongs inside `reconciliation_engine/`; SQL transformations
 belong inside `dbt/`; automated checks belong inside `tests/`; and operational
 guidance belongs inside `docs/`. Runtime databases, Parquet data, logs, virtual
 environments, and generated dbt artifacts stay local through `.gitignore`.
+See [Codebase Organization](docs/CODEBASE_ORGANIZATION.md) for the placement
+rules inherited by every project task.
 
 ## Options Data Availability
 
