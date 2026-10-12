@@ -15,7 +15,7 @@ from reconciliation_engine.security import restrict_file_permissions
 DEFAULT_DATA_ROOT: Final = Path("data")
 EQUITY_INSTRUMENT: Final = "equities"
 VALID_LAYERS: Final = {"raw", "normalized"}
-VALID_SOURCES: Final = {"YAHOO", "ALPACA"}
+VALID_SOURCES: Final = {"YAHOO", "ALPACA", "MASSIVE"}
 
 EQUITY_COLUMNS: Final = [
     "symbol",
@@ -30,13 +30,16 @@ EQUITY_ARCHIVE_COLUMNS: Final = [*EQUITY_COLUMNS, "run_id"]
 RECONCILIATION_COLUMNS: Final = [
     "symbol",
     "trade_date",
-    "yahoo_close",
-    "alpaca_close",
+    "source_a",
+    "source_b",
+    "source_a_close",
+    "source_b_close",
     "close_difference",
-    "yahoo_volume",
-    "alpaca_volume",
+    "source_a_volume",
+    "source_b_volume",
     "volume_difference",
     "status",
+    "break_reason",
 ]
 RECONCILIATION_ARCHIVE_COLUMNS: Final = [*RECONCILIATION_COLUMNS, "run_id"]
 
@@ -149,6 +152,18 @@ def read_dataframe(
     ):
         restored["trade_date"] = pd.to_datetime(restored["trade_date"]).dt.date
     return restored
+
+
+def dataframe_archive_exists(
+    source: str,
+    instrument_type: str,
+    run_id: str,
+    *,
+    layer: str,
+    data_root: str | Path = DEFAULT_DATA_ROOT,
+) -> bool:
+    """Return whether an immutable provider partition already exists."""
+    return _archive_path(layer, source, instrument_type, run_id, data_root).is_file()
 
 
 def normalize_equity_dataframe(frame: pd.DataFrame) -> pd.DataFrame:

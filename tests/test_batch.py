@@ -25,17 +25,21 @@ class BatchFailureHandlingTests(unittest.TestCase):
                     batch,
                     initialize_database=DEFAULT,
                     get_pipeline_run=DEFAULT,
-                    fetch_equity_sources=DEFAULT,
+                    fetch_partitioned_equity_sources=DEFAULT,
                     archive_equity_source=DEFAULT,
-                    reconcile_equity_bars=DEFAULT,
+                    reconcile_equity_sources=DEFAULT,
                     archive_reconciliation_results=DEFAULT,
                     persist_equity_run=DEFAULT,
                     create_equity_exceptions=DEFAULT,
                     send_run_notification=DEFAULT,
                 ) as mocks, patch("builtins.print"):
-                    mocks["fetch_equity_sources"].return_value = (source, source)
-                    mocks["archive_equity_source"].side_effect = [source, source]
-                    mocks["reconcile_equity_bars"].return_value = result
+                    mocks["fetch_partitioned_equity_sources"].return_value = {
+                        "YAHOO": source,
+                        "ALPACA": source,
+                        "MASSIVE": source,
+                    }
+                    mocks["archive_equity_source"].side_effect = [source, source, source]
+                    mocks["reconcile_equity_sources"].return_value = result
                     mocks["create_equity_exceptions"].return_value = pd.DataFrame()
                     mocks["get_pipeline_run"].return_value = None
                     mocks["persist_equity_run"].return_value = True
@@ -49,13 +53,17 @@ class BatchFailureHandlingTests(unittest.TestCase):
                 self.assertEqual(summary["break_count"], expected_breaks)
                 self.assertEqual(summary["symbols"], ["AAPL"])
                 self.assertFalse(summary["already_completed"])
-                mocks["fetch_equity_sources"].assert_called_once_with(
-                    ("AAPL",),
-                    batch.get_control_date("2026-10-09"),
+                mocks["fetch_partitioned_equity_sources"].assert_called_once_with(
+                    run_id=summary["run_id"],
+                    symbols=("AAPL",),
+                    control_date=batch.get_control_date("2026-10-09"),
+                    db_path="test.duckdb",
+                    data_root="data",
+                    bucket_count=batch.DEFAULT_SYMBOL_BUCKETS,
+                    max_workers=batch.DEFAULT_MAX_WORKERS,
                 )
-                mocks["reconcile_equity_bars"].assert_called_once_with(
-                    source,
-                    source,
+                mocks["reconcile_equity_sources"].assert_called_once_with(
+                    {"YAHOO": source, "ALPACA": source, "MASSIVE": source},
                     close_tolerance=batch.DEFAULT_BREAK_TOLERANCE,
                     warn_tolerance=batch.DEFAULT_WARN_TOLERANCE,
                     break_pct_tolerance=batch.DEFAULT_BREAK_PCT_TOLERANCE,
@@ -64,14 +72,14 @@ class BatchFailureHandlingTests(unittest.TestCase):
                 mocks["send_run_notification"].assert_called_once_with(summary)
 
     @patch("reconciliation_engine.batch.send_run_notification")
-    @patch("reconciliation_engine.batch.fetch_equity_sources")
+    @patch("reconciliation_engine.batch.fetch_partitioned_equity_sources")
     @patch("reconciliation_engine.batch.get_pipeline_run")
     @patch("reconciliation_engine.batch.initialize_database")
     def test_completed_logical_run_is_not_fetched_or_written_again(
         self,
         initialize_database,
         get_pipeline_run,
-        fetch_equity_sources,
+        fetch_partitioned_equity_sources,
         send_run_notification,
     ):
         get_pipeline_run.return_value = {
@@ -91,7 +99,7 @@ class BatchFailureHandlingTests(unittest.TestCase):
             )
 
         self.assertTrue(summary["already_completed"])
-        fetch_equity_sources.assert_not_called()
+        fetch_partitioned_equity_sources.assert_not_called()
         send_run_notification.assert_not_called()
 
     def test_run_id_is_stable_for_equivalent_universes(self):
@@ -146,12 +154,16 @@ class BatchSymbolConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid equity symbol"):
             batch.normalize_symbols(["AAPL;DROP TABLE"])
 
+    @patch("reconciliation_engine.batch.MassiveClient")
+    @patch("reconciliation_engine.batch.fetch_massive_equity_bars")
     @patch("reconciliation_engine.batch.fetch_stock_bars")
     @patch("reconciliation_engine.batch.fetch_yahoo_bars")
-    def test_fetches_every_configured_symbol_from_both_providers(
+    def test_fetches_every_configured_symbol_from_all_providers(
         self,
         fetch_yahoo_bars,
         fetch_stock_bars,
+        fetch_massive_equity_bars,
+        massive_client,
     ):
         def provider_frame(symbol, *args, **kwargs):
             return pd.DataFrame(
@@ -168,14 +180,16 @@ class BatchSymbolConfigurationTests(unittest.TestCase):
 
         fetch_yahoo_bars.side_effect = provider_frame
         fetch_stock_bars.side_effect = provider_frame
+        fetch_massive_equity_bars.side_effect = provider_frame
 
-        yahoo, alpaca = batch.fetch_equity_sources(
+        providers = batch.fetch_equity_sources(
             ["MSFT", "NVDA"],
             "2026-10-09",
         )
 
-        self.assertEqual(yahoo["symbol"].tolist(), ["MSFT", "NVDA"])
-        self.assertEqual(alpaca["symbol"].tolist(), ["MSFT", "NVDA"])
+        self.assertEqual(set(providers), {"YAHOO", "ALPACA", "MASSIVE"})
+        for frame in providers.values():
+            self.assertEqual(frame["symbol"].tolist(), ["MSFT", "NVDA"])
         self.assertEqual(
             fetch_yahoo_bars.call_args_list,
             [
@@ -197,6 +211,11 @@ class BatchSymbolConfigurationTests(unittest.TestCase):
             [item.args[0] for item in fetch_stock_bars.call_args_list],
             ["MSFT", "NVDA"],
         )
+        self.assertEqual(
+            [item.args[0] for item in fetch_massive_equity_bars.call_args_list],
+            ["MSFT", "NVDA"],
+        )
+        massive_client.assert_called_once_with()
 
 
 if __name__ == "__main__":

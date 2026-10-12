@@ -44,14 +44,12 @@ flowchart TD
     AAPL, MSFT, SPY), optionally overridden by repeatable `--symbol` arguments.
   - **Options**: underlyings to expand into chains (e.g., SPY), optionally filtered to near-the-money strikes and the front few expiries to keep volume manageable.
   - **Futures**: continuous-contract symbols (e.g., ES=F, CL=F, GC=F).
-  - **Swaps / Forwards (OTC)**: the trade blotter exported from the internal booking system (there is no listed universe to fetch).
 
 ### Phase B - Ingestion
 - Pull the same instruments from Source A and Source B.
   - **Equities**: daily OHLCV bars per ticker.
   - **Options**: the chain per underlying (calls + puts), capturing each contract's `close`, `bid`, `ask`, `volume`, and `open_interest`.
   - **Futures**: OHLCV bars per continuous contract (yfinance; Alpaca has no free futures feed).
-  - **Swaps / Forwards (OTC)**: load the internal blotter (Source A) and mark each trade against a free market reference (Source B) — yield proxies for swaps, live FX spot + covered-interest-parity for forwards.
 - Save raw payload snapshots for traceability.
 - Capture request metadata (provider, latency, status).
 
@@ -136,26 +134,9 @@ described below.
 - `open`, `high`, `low`, `close`, `volume`
 - `ingested_ts`
 
-### `swaps_data_staging` (derivatives — OTC)
-- `run_id`
-- `source` (`A` = internal book, `B` = market reference)
-- `trade_id`, `counterparty`, `currency`, `notional`
-- `pay_receive`, `fixed_rate_pct`, `floating_index`, `pay_freq`
-- `effective_date`, `maturity_date`
-- `reference_rate_pct` (from free yield proxy), `fixed_minus_float_pct`
-- `trade_date`, `ingested_ts`
-
-### `forwards_data_staging` (derivatives — OTC)
-- `run_id`
-- `source` (`A` = internal book, `B` = market-implied)
-- `trade_id`, `pair`, `base_ccy`, `quote_ccy`, `notional`
-- `booked_forward_rate`, `spot_rate`, `market_forward_rate`
-- `value_date`, `days_to_value`, `diff_pips`
-- `trade_date`, `ingested_ts`
-
 ### `recon_results`
 - `run_id`
-- `instrument_type` (`EQUITY`, `OPTION`, `FUTURE`, `SWAP`, `FORWARD`)
+- `instrument_type` (`EQUITY`, `OPTION`, `FUTURE`)
 - `symbol` (equity ticker) **or** `contract_symbol` (option)
 - `underlying`, `expiry`, `strike`, `option_type` (null for equities)
 - `trade_date`

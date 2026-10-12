@@ -11,6 +11,7 @@ summary.
 
 from datetime import datetime, timedelta, timezone
 import math
+from itertools import combinations
 from alpaca.data.timeframe import TimeFrame
 import pandas as pd
 from reconciliation_engine.ingestion.yahoo_equities import (
@@ -40,6 +41,56 @@ RECONCILIATION_COLUMNS = [
     "volume_difference",
     "status",
 ]
+
+PAIRWISE_RECONCILIATION_COLUMNS = [
+    "symbol", "trade_date", "source_a", "source_b", "source_a_close",
+    "source_b_close", "close_difference", "source_a_volume", "source_b_volume",
+    "volume_difference", "status", "break_reason",
+]
+
+
+def reconcile_equity_sources(
+    provider_bars: dict[str, pd.DataFrame],
+    close_tolerance: float = 0.01,
+    warn_tolerance: float | None = None,
+    break_pct_tolerance: float | None = None,
+    warn_pct_tolerance: float | None = None,
+) -> pd.DataFrame:
+    """Reconcile every provider pair while preserving provider lineage."""
+    if len(provider_bars) < 2:
+        raise ValueError("At least two equity providers are required")
+    results: list[pd.DataFrame] = []
+    for (source_a, bars_a), (source_b, bars_b) in combinations(
+        provider_bars.items(), 2
+    ):
+        legacy = reconcile_equity_bars(
+            bars_a,
+            bars_b,
+            close_tolerance=close_tolerance,
+            warn_tolerance=warn_tolerance,
+            break_pct_tolerance=break_pct_tolerance,
+            warn_pct_tolerance=warn_pct_tolerance,
+        ).rename(
+            columns={
+                "yahoo_close": "source_a_close",
+                "alpaca_close": "source_b_close",
+                "yahoo_volume": "source_a_volume",
+                "alpaca_volume": "source_b_volume",
+            }
+        )
+        legacy["source_a"] = source_a.upper()
+        legacy["source_b"] = source_b.upper()
+        missing_a = legacy["source_a_close"].isna()
+        missing_b = legacy["source_b_close"].isna()
+        legacy["break_reason"] = pd.NA
+        legacy.loc[missing_a, "break_reason"] = f"MISSING_{source_a.upper()}_OBSERVATION"
+        legacy.loc[missing_b, "break_reason"] = f"MISSING_{source_b.upper()}_OBSERVATION"
+        legacy.loc[
+            (legacy["status"] == "BREAK") & ~missing_a & ~missing_b,
+            "break_reason",
+        ] = "PRICE_DIFFERENCE"
+        results.append(legacy[PAIRWISE_RECONCILIATION_COLUMNS])
+    return pd.concat(results, ignore_index=True)
 
 
 
@@ -175,9 +226,6 @@ def validate_equity_bars(df: pd.DataFrame) -> bool:
         raise ValueError("Equity OHLC values must be non-negative")
     if (canonical["volume"] < 0).any():
         raise ValueError("Equity volume must be non-negative")
-    if not canonical["volume"].map(lambda value: float(value).is_integer()).all():
-        raise ValueError("Equity volume must contain whole numbers")
-
     if (
         (canonical["high"] < canonical[["open", "close", "low"]].max(axis=1))
         | (canonical["low"] > canonical[["open", "close", "high"]].min(axis=1))

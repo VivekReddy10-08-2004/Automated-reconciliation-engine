@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: int_equity_pairs
-    description: Same-run Yahoo and Alpaca observations paired by symbol and trade date.
+    description: Expected Yahoo, Alpaca, and Massive provider pairs by run, symbol, and trade date.
     columns:
       - name: run_id
         data_tests:
@@ -11,5 +11,11 @@ models:
         data_tests:
           - not_null
       - name: trade_date
+        data_tests:
+          - not_null
+      - name: source_a
+        data_tests:
+          - not_null
+      - name: source_b
         data_tests:
           - not_null

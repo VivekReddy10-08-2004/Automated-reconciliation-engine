@@ -4,10 +4,31 @@ import unittest
 from reconciliation_engine.reconciliation.equities import (
     RECONCILIATION_COLUMNS,
     reconcile_equity_bars,
+    reconcile_equity_sources,
 )
 
 
 class ReconciliationTests(unittest.TestCase):
+    def test_three_providers_produce_three_explicit_pairs(self):
+        base = pd.DataFrame({
+            "symbol": ["AAPL"], "trade_date": ["2026-08-05"],
+            "open": [100.0], "high": [102.0], "low": [99.0],
+            "close": [100.0], "volume": [1000],
+        })
+        massive = base.copy()
+        massive["close"] = 101.0
+
+        result = reconcile_equity_sources(
+            {"YAHOO": base, "ALPACA": base.copy(), "MASSIVE": massive},
+            close_tolerance=0.05,
+        )
+
+        self.assertEqual(
+            set(zip(result["source_a"], result["source_b"])),
+            {("YAHOO", "ALPACA"), ("YAHOO", "MASSIVE"), ("ALPACA", "MASSIVE")},
+        )
+        self.assertEqual((result["status"] == "BREAK").sum(), 2)
+
     def test_reconcile_equity_bars_marks_matches_and_breaks(self):
         yahoo = pd.DataFrame({
             "symbol": ["AAPL", "AAPL"],
@@ -124,6 +145,17 @@ class ReconciliationTests(unittest.TestCase):
 
         self.assertEqual(result.iloc[0]["symbol"], "AAPL")
         self.assertEqual(result.iloc[0]["status"], "MATCH")
+
+    def test_fractional_provider_volume_is_preserved(self):
+        bars = pd.DataFrame({
+            "symbol": ["AAPL"], "trade_date": ["2026-08-05"],
+            "open": [100.0], "high": [101.0], "low": [99.0],
+            "close": [100.0], "volume": [1000.25],
+        })
+
+        result = reconcile_equity_bars(bars, bars)
+
+        self.assertEqual(result.loc[0, "yahoo_volume"], 1000.25)
 
     def test_percentage_bands_absorb_small_cross_feed_differences(self):
         yahoo = pd.DataFrame(

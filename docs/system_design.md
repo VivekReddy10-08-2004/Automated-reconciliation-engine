@@ -8,7 +8,7 @@ This document outlines the architecture, data flow, and release boundary for the
 The system is a local Python application with independently runnable batch, real-time, scoring, and dashboard processes. Only the simulated real-time path communicates over **ZeroMQ**; the batch path persists to Parquet and DuckDB.
 
 ### The Microservices:
-1. **Module A (Ingestion Engine):** Connects to Yahoo and Alpaca HTTP APIs. A live WebSocket source is not implemented.
+1. **Module A (Ingestion Engine):** Connects to Yahoo, Alpaca, and Massive HTTP APIs. Massive assets share one quota controller. A live WebSocket source is not implemented.
 2. **Module E (The Bus):** The ZeroMQ network layer that distributes data.
 3. **Module F (Anomaly Scoring):** An implemented prior-price percentage rule,
    with an optional offline Isolation Forest comparison.
@@ -26,19 +26,18 @@ The system is a local Python application with independently runnable batch, real
 The current integrations are:
 *   **Source A (Baseline):** `yfinance` (Yahoo Finance) for unadjusted end-of-day equity prices and **options chains** (`Ticker.option_chain()` exposes calls/puts with strike, expiry, bid/ask, implied volatility, open interest).
 *   **Source B (Cross-Reference):** Alpaca REST API for historical equities (`StockHistoricalDataClient`) and option snapshots (`OptionHistoricalDataClient` / `OptionChainRequest`). Equity batch requests explicitly use IEX; option coverage depends on account entitlement.
+*   **Source C (Broad and derivatives reference):** Massive REST for grouped/per-symbol US equity bars, option contracts and aggregates, and futures contracts and session/minute aggregates. One process-wide free-plan limiter prevents asset pipelines from competing beyond the configured request budget.
 *   **Real-time demo input:** deterministic simulated equity ticks. No Alpaca WebSocket is connected in this release.
 
-**Derivatives** here means **options, futures, swaps, and forwards**. Sourcing differs by instrument because not everything has a free market feed:
+The supported derivatives are equity options and futures:
 
 | Instrument | Free source | Notes |
 | --- | --- | --- |
-| Equities | Alpaca + yfinance | OHLCV bars. |
-| Options | Alpaca + yfinance | Coverage depends on Alpaca entitlement; free indicative data must not be described as full OPRA. |
-| Futures (`reconciliation_engine/ingestion/futures.py`) | yfinance (`ES=F`, `CL=F`, …) | Continuous-contract OHLCV. Alpaca has no free futures feed. |
-| Swaps (`reconciliation_engine/ingestion/swaps.py`) | Synthetic blotter + yfinance yields (`^IRX`, `^TNX`) | OTC: no public feed. Internal book marked vs a free reference rate. |
-| Forwards (`reconciliation_engine/ingestion/forwards.py`) | Synthetic blotter + yfinance FX spot | OTC: booked forward marked vs a covered-interest-parity forward derived from live spot. |
+| Equities | Alpaca + yfinance + Massive | Massive supports per-symbol comparison and one-call grouped US-market EOD acquisition. |
+| Options | Alpaca + yfinance + Massive | Massive free access supplies contracts and aggregates, not quote/Greek/open-interest parity. |
+| Futures | yfinance + Massive | Yahoo supplies continuous OHLCV; Massive supplies expiring contracts and exchange session bars. Alpaca has no futures feed. |
 
-Only equities currently flow through the persisted batch pipeline. Options have offline-tested ingestion and full-outer reconciliation functions that retain one-sided contracts with explicit missing-provider reasons. Futures, swaps, and forwards have ingestion adapters, while their unified control reports remain planned. See [Data Sources](../DATA_SOURCES.md) for exact provenance and limitations.
+The persisted equity batch compares all three provider pairs and records provider lineage in DuckDB, Parquet, dbt, exceptions, and the dashboard. Options support three-provider pairwise comparison in Python. Futures support Yahoo/Massive comparison only with an explicit continuous-to-expiring contract roll mapping. Persisted derivative batch orchestration remains the next boundary. See [Data Sources](../DATA_SOURCES.md) for exact provenance and limitations.
 
 ---
 
@@ -59,8 +58,7 @@ Only equities currently flow through the persisted batch pipeline. Options have 
 ### Phase 3: Historical Batch Ingestion & Reconciliation (Data Engineering Workflow)
 *(This process is run manually or by the documented local OS scheduler. Airflow is planned.)*
 1.  **Idempotency Check:** A deterministic run ID is derived from the control date, sorted universe, and rule version. A completed retry returns without provider calls or writes.
-2.  **Batch Fetch:** The Ingestion Engine requests, from both Source A (Yahoo) and Source B (Alpaca):
-    *   recent daily OHLCV bars for each configured equity.
+2.  **Batch Fetch:** The Ingestion Engine requests recent daily OHLCV bars from Yahoo, Alpaca, and Massive for each configured equity.
 3.  **Parquet Storage (Data Lake):** Payloads are saved once as immutable `.parquet` files partitioned by run ID. An interrupted retry reuses completed partitions.
 4.  **Validation and Alignment:** Symbols and dates are normalized; duplicate keys, nulls, invalid types, negative values, and inconsistent OHLC ranges are rejected.
 5.  **dbt Transformation:** A `dbt` project runs against **DuckDB** and joins equity sources on `(run_id, symbol, trade_date)`.
@@ -92,7 +90,7 @@ The screen is a `rich` layout refreshed ~1–2×/second via `rich.live.Live`, di
 1.  **Latest Run (implemented):** Run ID, start time, status, matches, and breaks.
 2.  **Largest Mismatches (implemented):** Source values and deltas for the latest run, with absent observations displayed as `MISSING`.
 3.  **Operational Analytics (implemented):** Break-rate history, repeat offenders, and exception counts.
-4.  **Exception Management Analytics (planned):** Owner, age, SLA breaches, and resolution trends after those fields are persisted.
+4.  **Exception Management Analytics (implemented foundation):** Owner, age, SLA breaches, and resolution fields are persisted; the dashboard shows unassigned, overdue, and oldest-open counts.
 5.  **Ingestion Feed (implemented):** Most recent annotated tick, feed latency, and received count.
 6.  **Anomaly Monitor (implemented):** Rolling recent anomaly count and latest explained anomaly.
 
@@ -133,7 +131,7 @@ counterparty fields must be masked according to the viewer's role.
 | Break-rate history | `pipeline_runs` | Implemented |
 | Repeat offenders | `equity_reconciliation_results` | Implemented |
 | Exception counts by status | `equity_exceptions` | Implemented |
-| Exception age, owner, and SLA | Expanded exception schema | Planned |
+| Exception age, owner, and SLA | `equity_exceptions` | Implemented foundation |
 | Provider, rule, and instrument grouping | Unified reconciliation facts | Planned |
 | Live latency and anomaly panels | ZeroMQ annotated-tick endpoint | Implemented |
 

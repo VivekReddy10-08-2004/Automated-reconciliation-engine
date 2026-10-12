@@ -1,5 +1,6 @@
 import argparse
 from datetime import date, datetime, timedelta, timezone
+import logging
 import os
 from pathlib import Path
 import re
@@ -17,15 +18,23 @@ from reconciliation_engine.storage.data_lake import (
     EQUITY_INSTRUMENT,
     archive_equity_source,
     archive_reconciliation_results,
+    dataframe_archive_exists,
     read_dataframe,
 )
 from reconciliation_engine.reconciliation.exceptions import create_equity_exceptions
 from reconciliation_engine.ingestion.alpaca_equities import fetch_stock_bars
+from reconciliation_engine.ingestion.massive import MassiveClient
+from reconciliation_engine.ingestion.massive_equities import fetch_massive_equity_bars
+from reconciliation_engine.ingestion.providers import default_equity_adapters
 from reconciliation_engine.ingestion.yahoo_equities import (
     fetch_equity_bars as fetch_yahoo_bars,
 )
-from reconciliation_engine.reconciliation.equities import reconcile_equity_bars
+from reconciliation_engine.reconciliation.equities import (
+    reconcile_equity_sources,
+)
 from reconciliation_engine.notifications import send_run_notification
+from reconciliation_engine.scaling.equity_ingestion import ingest_equity_partitions
+from reconciliation_engine.scaling.partitions import DEFAULT_SYMBOL_BUCKETS
 from reconciliation_engine.storage.duckdb import (
     get_pipeline_run,
     initialize_database,
@@ -36,13 +45,16 @@ from reconciliation_engine.storage.duckdb import (
 SYMBOLS_ENV = "RECONCILIATION_SYMBOLS"
 DEFAULT_RECONCILIATION_SYMBOLS = ("AAPL",)
 SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
-RUN_DEFINITION_VERSION = "equity-daily-v3"
+RUN_DEFINITION_VERSION = "equity-daily-v5-partitioned"
 DEFAULT_WARN_TOLERANCE = 0.01
 DEFAULT_BREAK_TOLERANCE = 0.05
 DEFAULT_WARN_PCT_TOLERANCE = 0.001
 DEFAULT_BREAK_PCT_TOLERANCE = 0.005
 EQUITY_LOOKBACK_CALENDAR_DAYS = 10
 MARKET_TIMEZONE = ZoneInfo("America/New_York")
+SYMBOL_BUCKETS_ENV = "RECONCILIATION_SYMBOL_BUCKETS"
+MAX_WORKERS_ENV = "RECONCILIATION_MAX_WORKERS"
+DEFAULT_MAX_WORKERS = 8
 
 
 def normalize_symbols(values: Iterable[str]) -> tuple[str, ...]:
@@ -90,21 +102,79 @@ def get_control_date(value: date | str | None = None) -> date:
     return date.fromisoformat(value)
 
 
-def build_run_id(symbols: Iterable[str], control_date: date | str) -> str:
+def build_run_id(
+    symbols: Iterable[str],
+    control_date: date | str,
+    bucket_count: int = DEFAULT_SYMBOL_BUCKETS,
+) -> str:
     """Build one stable run ID per control date, universe, and rule version."""
     selected_symbols = tuple(sorted(normalize_symbols(symbols)))
     logical_key = (
-        f"{RUN_DEFINITION_VERSION}|{get_control_date(control_date).isoformat()}|"
+        f"{RUN_DEFINITION_VERSION}|buckets={bucket_count}|"
+        f"{get_control_date(control_date).isoformat()}|"
         f"{','.join(selected_symbols)}"
     )
     return str(uuid5(NAMESPACE_URL, logical_key))
 
 
+def _positive_environment_integer(name: str, default: int, maximum: int) -> int:
+    load_dotenv("project.env", override=False)
+    raw = os.getenv(name, str(default))
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be an integer") from error
+    if not 1 <= value <= maximum:
+        raise ValueError(f"{name} must be between 1 and {maximum}")
+    return value
+
+
+def get_scaling_configuration() -> tuple[int, int]:
+    """Return stable symbol-bucket count and bounded ingestion workers."""
+    return (
+        _positive_environment_integer(
+            SYMBOL_BUCKETS_ENV, DEFAULT_SYMBOL_BUCKETS, 4096
+        ),
+        _positive_environment_integer(MAX_WORKERS_ENV, DEFAULT_MAX_WORKERS, 64),
+    )
+
+
+def fetch_partitioned_equity_sources(
+    *,
+    run_id: str,
+    symbols: tuple[str, ...],
+    control_date: date,
+    db_path: str,
+    data_root: str | Path,
+    bucket_count: int,
+    max_workers: int,
+) -> dict[str, pd.DataFrame]:
+    """Fetch canonical equity partitions with independent checkpoints."""
+    end = datetime.combine(
+        control_date + timedelta(days=1),
+        datetime.min.time(),
+        tzinfo=timezone.utc,
+    )
+    start = end - timedelta(days=EQUITY_LOOKBACK_CALENDAR_DAYS)
+    return ingest_equity_partitions(
+        run_id=run_id,
+        control_date=control_date,
+        symbols=symbols,
+        start=start,
+        end=end,
+        adapters=default_equity_adapters(),
+        db_path=db_path,
+        data_root=data_root,
+        bucket_count=bucket_count,
+        max_workers=max_workers,
+    )
+
+
 def fetch_equity_sources(
     symbols: Iterable[str] = DEFAULT_RECONCILIATION_SYMBOLS,
     control_date: date | str | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Fetch the two provider datasets used by the daily equity control."""
+) -> dict[str, pd.DataFrame]:
+    """Fetch all equity providers used by the daily control."""
     selected_symbols = normalize_symbols(symbols)
     effective_control_date = get_control_date(control_date)
     end = datetime.combine(
@@ -122,22 +192,31 @@ def fetch_equity_sources(
         fetch_stock_bars(symbol, start, end, TimeFrame.Day)
         for symbol in selected_symbols
     ]
-    return (
-        pd.concat(yahoo_frames, ignore_index=True),
-        pd.concat(alpaca_frames, ignore_index=True),
-    )
+    massive_client = MassiveClient()
+    massive_frames = [
+        fetch_massive_equity_bars(
+            symbol,
+            start,
+            end,
+            adjusted=False,
+            client=massive_client,
+        )
+        for symbol in selected_symbols
+    ]
+    return {
+        "YAHOO": pd.concat(yahoo_frames, ignore_index=True),
+        "ALPACA": pd.concat(alpaca_frames, ignore_index=True),
+        "MASSIVE": pd.concat(massive_frames, ignore_index=True),
+    }
 
 
 def reconciliation(
     symbols: Iterable[str] | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
     """Fetch and reconcile data without persistence (kept for library callers)."""
-    yahoo_bars, alpaca_bars = fetch_equity_sources(
-        get_reconciliation_symbols(symbols)
-    )
-
-    reconciliation_df = reconcile_equity_bars(yahoo_bars, alpaca_bars)
-    return yahoo_bars, alpaca_bars, reconciliation_df
+    provider_bars = fetch_equity_sources(get_reconciliation_symbols(symbols))
+    reconciliation_df = reconcile_equity_sources(provider_bars)
+    return provider_bars, reconciliation_df
 
 
 def replay_archived_run(
@@ -145,29 +224,30 @@ def replay_archived_run(
     data_root: str | Path = "data",
 ) -> pd.DataFrame:
     """Recompute reconciliation from saved Parquet inputs without API calls."""
-    yahoo_bars = read_dataframe(
-        "YAHOO",
-        EQUITY_INSTRUMENT,
-        run_id,
-        layer="normalized",
-        data_root=data_root,
-    )
-    alpaca_bars = read_dataframe(
-        "ALPACA",
-        EQUITY_INSTRUMENT,
-        run_id,
-        layer="normalized",
-        data_root=data_root,
-    )
-
-    if yahoo_bars.empty or alpaca_bars.empty:
-        raise FileNotFoundError(
-            f"Normalized Yahoo and Alpaca archives are required for run {run_id}"
+    provider_bars = {
+        source: read_dataframe(
+            source,
+            EQUITY_INSTRUMENT,
+            run_id,
+            layer="normalized",
+            data_root=data_root,
         )
-
-    return reconcile_equity_bars(
-        yahoo_bars[EQUITY_COLUMNS],
-        alpaca_bars[EQUITY_COLUMNS],
+        for source in ("YAHOO", "ALPACA", "MASSIVE")
+    }
+    available_provider_bars = {
+        source: frame
+        for source, frame in provider_bars.items()
+        if not frame.empty
+    }
+    if len(available_provider_bars) < 2:
+        raise FileNotFoundError(
+            f"At least two normalized provider archives are required for run {run_id}"
+        )
+    return reconcile_equity_sources(
+        {
+            source: frame[EQUITY_COLUMNS]
+            for source, frame in available_provider_bars.items()
+        },
     )
 
 
@@ -179,7 +259,10 @@ def main(
 ) -> dict:
     selected_symbols = get_reconciliation_symbols(symbols)
     effective_control_date = get_control_date(control_date)
-    run_id = build_run_id(selected_symbols, effective_control_date)
+    bucket_count, max_workers = get_scaling_configuration()
+    run_id = build_run_id(
+        selected_symbols, effective_control_date, bucket_count=bucket_count
+    )
     started_at = datetime.now(timezone.utc).isoformat()
     break_count = 0
 
@@ -201,29 +284,51 @@ def main(
             )
             return summary
 
-        yahoo_raw, alpaca_raw = fetch_equity_sources(
-            selected_symbols,
-            effective_control_date,
+        sources = ("YAHOO", "ALPACA", "MASSIVE")
+        complete_archive = all(
+            dataframe_archive_exists(
+                source,
+                EQUITY_INSTRUMENT,
+                run_id,
+                layer="normalized",
+                data_root=data_root,
+            )
+            for source in sources
         )
+        if complete_archive:
+            provider_bars = {
+                source: read_dataframe(
+                    source,
+                    EQUITY_INSTRUMENT,
+                    run_id,
+                    layer="normalized",
+                    data_root=data_root,
+                ).drop(columns="run_id", errors="ignore")
+                for source in sources
+            }
+        else:
+            raw_provider_bars = fetch_partitioned_equity_sources(
+                run_id=run_id,
+                symbols=selected_symbols,
+                control_date=effective_control_date,
+                db_path=db_path,
+                data_root=data_root,
+                bucket_count=bucket_count,
+                max_workers=max_workers,
+            )
+            provider_bars = {
+                source: archive_equity_source(
+                    frame,
+                    source,
+                    run_id,
+                    data_root=data_root,
+                    idempotent=True,
+                )
+                for source, frame in raw_provider_bars.items()
+            }
 
-        yahoo_bars = archive_equity_source(
-            yahoo_raw,
-            "YAHOO",
-            run_id,
-            data_root=data_root,
-            idempotent=True,
-        )
-        alpaca_bars = archive_equity_source(
-            alpaca_raw,
-            "ALPACA",
-            run_id,
-            data_root=data_root,
-            idempotent=True,
-        )
-
-        reconciliation_df = reconcile_equity_bars(
-            yahoo_bars,
-            alpaca_bars,
+        reconciliation_df = reconcile_equity_sources(
+            provider_bars,
             close_tolerance=DEFAULT_BREAK_TOLERANCE,
             warn_tolerance=DEFAULT_WARN_TOLERANCE,
             break_pct_tolerance=DEFAULT_BREAK_PCT_TOLERANCE,
@@ -248,8 +353,9 @@ def main(
             started_at=started_at,
             finished_at=finished_at,
             status=run_status,
-            yahoo_bars=yahoo_bars,
-            alpaca_bars=alpaca_bars,
+            yahoo_bars=provider_bars["YAHOO"],
+            alpaca_bars=provider_bars["ALPACA"],
+            massive_bars=provider_bars["MASSIVE"],
             reconciliation=reconciliation_df,
             exceptions=exceptions_df,
             db_path=db_path,
@@ -273,17 +379,17 @@ def main(
         print(
             f"Run ID: {run_id} | "
             f"Symbols: {','.join(selected_symbols)} | "
-            f"Yahoo rows: {len(yahoo_bars)} | "
-            f"Alpaca rows: {len(alpaca_bars)} | "
+            f"Yahoo rows: {len(provider_bars['YAHOO'])} | "
+            f"Alpaca rows: {len(provider_bars['ALPACA'])} | "
+            f"Massive rows: {len(provider_bars['MASSIVE'])} | "
             f"MATCH: {match_count} | "
             f"WARN: {warn_count} | "
             f"BREAK: {break_count} | "
             f"Largest difference: {largest_difference}"
         )
-        print("Yahoo dates:")
-        print(yahoo_bars["trade_date"].tolist())
-        print("Alpaca dates:")
-        print(alpaca_bars["trade_date"].tolist())
+        for source, bars in provider_bars.items():
+            print(f"{source.title()} dates:")
+            print(bars["trade_date"].tolist())
         print(reconciliation_df)
     except Exception:
         failed_summary = {
@@ -301,6 +407,7 @@ def main(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(
         description="Run the live equity control or replay archived provider data."
     )

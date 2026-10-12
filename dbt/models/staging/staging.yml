@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: stg_equity_bars
-    description: Typed, normalized, and deduplicated equity bars from both providers.
+    description: Typed, normalized, and deduplicated equity bars from all providers.
     columns:
       - name: bar_key
         description: Composite key for one provider observation in one run.
@@ -17,7 +17,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: [YAHOO, ALPACA]
+                values: [YAHOO, ALPACA, MASSIVE]
       - name: symbol
         data_tests:
           - not_null

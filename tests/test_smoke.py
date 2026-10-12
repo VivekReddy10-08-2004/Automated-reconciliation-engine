@@ -27,6 +27,7 @@ class SmokeCheckTests(unittest.TestCase):
         values = {
             "ALPACA_API_KEY": "test-api-key",
             "ALPACA_SECRET_KEY": "test-secret-key",
+            "MASSIVE_API_KEY": "test-massive-key",
             "RECONCILIATION_SYMBOLS": "MSFT,NVDA",
             "REALTIME_ZMQ_ENDPOINT": "tcp://127.0.0.1:5555",
             "REALTIME_SCORED_ZMQ_ENDPOINT": "tcp://127.0.0.1:5556",
@@ -51,8 +52,20 @@ class SmokeCheckTests(unittest.TestCase):
 
         self.assertEqual(result["symbols"], ("MSFT", "NVDA"))
         self.assertTrue(result["credentials_configured"])
+        self.assertTrue(result["massive_credentials_configured"])
         self.assertNotIn("api_key", result)
         self.assertNotIn("secret_key", result)
+        self.assertNotIn("massive_api_key", result)
+
+    def test_configuration_check_rejects_massive_placeholder(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_path = self._write_environment(
+                directory,
+                MASSIVE_API_KEY="your_massive_api_key_here",
+            )
+            with patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "Massive.*placeholders"):
+                    check_configuration(env_path)
 
     def test_configuration_check_rejects_placeholder_credentials(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -13,6 +13,12 @@ models:
       - name: trade_date
         data_tests:
           - not_null
+      - name: source_a
+        data_tests:
+          - not_null
+      - name: source_b
+        data_tests:
+          - not_null
       - name: status
         data_tests:
           - not_null

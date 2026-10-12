@@ -48,6 +48,7 @@ def _dashboard_data() -> DashboardData:
                     "status": "SUCCESS_WITH_BREAKS",
                     "yahoo_row_count": 3,
                     "alpaca_row_count": 3,
+                    "massive_row_count": 3,
                     "match_count": 1,
                     "warn_count": 1,
                     "break_count": 1,
@@ -61,6 +62,8 @@ def _dashboard_data() -> DashboardData:
                     "symbol": "AAPL",
                     "timestamp": "2026-10-11",
                     "metric_name": "close",
+                    "source_a": "YAHOO",
+                    "source_b": "MASSIVE",
                     "source_a_value": 100.0,
                     "source_b_value": 102.0,
                     "difference": -2.0,
@@ -92,23 +95,30 @@ class DashboardAnalyticsTests(unittest.TestCase):
                     CREATE TABLE pipeline_runs (
                         run_id VARCHAR, started_at TIMESTAMP, finished_at TIMESTAMP,
                         status VARCHAR, yahoo_row_count BIGINT, alpaca_row_count BIGINT,
+                        massive_row_count BIGINT,
                         match_count BIGINT, break_count BIGINT
                     );
                     CREATE TABLE equity_reconciliation_results (
                         run_id VARCHAR, symbol VARCHAR, timestamp TIMESTAMP,
-                        metric_name VARCHAR, source_a_value DOUBLE,
+                        metric_name VARCHAR, source_a VARCHAR, source_b VARCHAR,
+                        source_a_value DOUBLE,
                         source_b_value DOUBLE, difference DOUBLE,
                         is_discrepancy BOOLEAN
                     );
-                    CREATE TABLE equity_exceptions (status VARCHAR);
+                    CREATE TABLE equity_exceptions (
+                        status VARCHAR, owner VARCHAR, due_at TIMESTAMP,
+                        created_at TIMESTAMP
+                    );
                     CREATE TABLE fct_equity_reconciliation (
                         run_id VARCHAR, status VARCHAR
                     );
                     INSERT INTO pipeline_runs VALUES
-                        ('run-1', '2026-10-08', '2026-10-08', 'SUCCESS_WITH_BREAKS', 2, 2, 1, 1);
+                        ('run-1', '2026-10-08', '2026-10-08', 'SUCCESS_WITH_BREAKS', 2, 2, 2, 1, 1);
                     INSERT INTO equity_reconciliation_results VALUES
-                        ('run-1', 'AAPL', '2026-10-08', 'close', 100, 101, -1, true);
-                    INSERT INTO equity_exceptions VALUES ('OPEN');
+                        ('run-1', 'AAPL', '2026-10-08', 'close', 'YAHOO', 'MASSIVE', 100, 101, -1, true);
+                    INSERT INTO equity_exceptions VALUES (
+                        'OPEN', 'UNASSIGNED', '2020-01-01', '2020-01-01'
+                    );
                     INSERT INTO fct_equity_reconciliation VALUES
                         ('run-1', 'MATCH'), ('run-1', 'WARN'), ('run-1', 'BREAK');
                     """
@@ -124,6 +134,8 @@ class DashboardAnalyticsTests(unittest.TestCase):
             self.assertEqual(data.top_breaks.iloc[0]["symbol"], "AAPL")
             self.assertEqual(data.repeat_offenders.iloc[0]["affected_runs"], 1)
             self.assertEqual(data.exception_status.iloc[0]["status"], "OPEN")
+            self.assertEqual(data.exception_status.iloc[0]["unassigned_count"], 1)
+            self.assertEqual(data.exception_status.iloc[0]["overdue_count"], 1)
 
     def test_missing_database_becomes_batch_warning(self):
         with tempfile.TemporaryDirectory() as directory:

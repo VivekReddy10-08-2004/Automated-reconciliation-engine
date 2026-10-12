@@ -1,6 +1,7 @@
 """Reconcile normalized Yahoo and Alpaca option chains."""
 
 import pandas as pd
+from itertools import combinations
 
 OUTPUT_COLUMNS = [
     "underlying",
@@ -27,6 +28,48 @@ MATCH_COLUMNS = [
     "option_type",
     "trade_date",
 ]
+
+PAIRWISE_OUTPUT_COLUMNS = [
+    "underlying", "expiry", "strike", "option_type", "contract_symbol",
+    "trade_date", "source_a", "source_b", "source_a_close", "source_b_close",
+    "close_difference", "source_a_bid", "source_a_ask", "source_b_bid",
+    "source_b_ask", "status", "break_reason",
+]
+
+
+def reconcile_option_sources(
+    provider_options: dict[str, pd.DataFrame],
+    close_tolerance: float = 0.05,
+) -> pd.DataFrame:
+    """Reconcile every available option-provider pair by contract identity."""
+    if len(provider_options) < 2:
+        raise ValueError("At least two option providers are required")
+    results: list[pd.DataFrame] = []
+    for (source_a, options_a), (source_b, options_b) in combinations(
+        provider_options.items(), 2
+    ):
+        pair = reconcile_option_chain(
+            options_a, options_b, close_tolerance=close_tolerance
+        ).rename(
+            columns={
+                "yahoo_close": "source_a_close",
+                "alpaca_close": "source_b_close",
+                "yahoo_bid": "source_a_bid",
+                "yahoo_ask": "source_a_ask",
+                "alpaca_bid": "source_b_bid",
+                "alpaca_ask": "source_b_ask",
+            }
+        )
+        pair["source_a"] = source_a.upper()
+        pair["source_b"] = source_b.upper()
+        pair.loc[
+            pair["break_reason"] == "MISSING_ALPACA_CONTRACT", "break_reason"
+        ] = f"MISSING_{source_b.upper()}_CONTRACT"
+        pair.loc[
+            pair["break_reason"] == "MISSING_YAHOO_CONTRACT", "break_reason"
+        ] = f"MISSING_{source_a.upper()}_CONTRACT"
+        results.append(pair[PAIRWISE_OUTPUT_COLUMNS])
+    return pd.concat(results, ignore_index=True)
 
 
 def _prepare_options(frame: pd.DataFrame, provider: str) -> pd.DataFrame:

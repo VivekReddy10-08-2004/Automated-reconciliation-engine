@@ -71,7 +71,8 @@ def load_dashboard_data(db_path: str | Path, limit: int = 10) -> DashboardData:
         latest_run = conn.execute(
             """
             SELECT run_id, started_at, finished_at, status,
-                   yahoo_row_count, alpaca_row_count, match_count, break_count
+                   yahoo_row_count, alpaca_row_count, massive_row_count,
+                   match_count, break_count
             FROM pipeline_runs
             ORDER BY started_at DESC NULLS LAST
             LIMIT 1
@@ -121,7 +122,8 @@ def load_dashboard_data(db_path: str | Path, limit: int = 10) -> DashboardData:
                 SELECT run_id FROM pipeline_runs
                 ORDER BY started_at DESC NULLS LAST LIMIT 1
             )
-            SELECT symbol, timestamp, metric_name, source_a_value,
+            SELECT symbol, timestamp, metric_name, source_a, source_b,
+                   source_a_value,
                    source_b_value, difference
             FROM equity_reconciliation_results
             WHERE run_id = (SELECT run_id FROM latest) AND is_discrepancy
@@ -133,12 +135,13 @@ def load_dashboard_data(db_path: str | Path, limit: int = 10) -> DashboardData:
         ).fetchdf()
         repeat_offenders = conn.execute(
             """
-            SELECT symbol, metric_name, count(DISTINCT run_id) AS affected_runs,
+            SELECT symbol, metric_name, source_a, source_b,
+                   count(DISTINCT run_id) AS affected_runs,
                    max(CASE WHEN isfinite(difference) THEN abs(difference) END)
                        AS max_abs_difference
             FROM equity_reconciliation_results
             WHERE is_discrepancy
-            GROUP BY symbol, metric_name
+            GROUP BY symbol, metric_name, source_a, source_b
             ORDER BY affected_runs DESC, max_abs_difference DESC
             LIMIT ?
             """,
@@ -146,7 +149,17 @@ def load_dashboard_data(db_path: str | Path, limit: int = 10) -> DashboardData:
         ).fetchdf()
         exception_status = conn.execute(
             """
-            SELECT status, count(*) AS exception_count
+            SELECT status,
+                   count(*) AS exception_count,
+                   count(*) FILTER (WHERE owner = 'UNASSIGNED') AS unassigned_count,
+                   count(*) FILTER (
+                       WHERE status = 'OPEN' AND due_at < current_timestamp
+                   ) AS overdue_count,
+                   max(
+                       CASE WHEN status = 'OPEN'
+                            THEN date_diff('hour', created_at, current_timestamp)
+                       END
+                   ) AS oldest_open_hours
             FROM equity_exceptions
             GROUP BY status
             ORDER BY exception_count DESC
@@ -354,6 +367,7 @@ def _render_batch_panel(state: BatchDashboardState) -> Panel:
                 ("status", "Status"),
                 ("yahoo_row_count", "Yahoo"),
                 ("alpaca_row_count", "Alpaca"),
+                ("massive_row_count", "Massive"),
                 ("match_count", "MATCH"),
                 ("warn_count", "WARN"),
                 ("break_count", "BREAK"),
@@ -366,15 +380,28 @@ def _render_batch_panel(state: BatchDashboardState) -> Panel:
                 ("symbol", "Instrument"),
                 ("timestamp", "Date"),
                 ("metric_name", "Metric"),
-                ("source_a_value", "Source A"),
-                ("source_b_value", "Source B"),
+                ("source_a", "Provider A"),
+                ("source_a_value", "Value A"),
+                ("source_b", "Provider B"),
+                ("source_b_value", "Value B"),
                 ("difference", "Difference"),
+            ],
+        )
+        exceptions = _table(
+            "Exception operations",
+            data.exception_status,
+            [
+                ("status", "Status"),
+                ("exception_count", "Count"),
+                ("unassigned_count", "Unassigned"),
+                ("overdue_count", "Overdue"),
+                ("oldest_open_hours", "Oldest (h)"),
             ],
         )
         parts: list[object] = []
         if state.warning:
             parts.append(Text(state.warning, style="yellow"))
-        parts.extend((latest, breaks))
+        parts.extend((latest, breaks, exceptions))
         content = Group(*parts)
     return Panel(content, title="Batch reconciliation", border_style="blue")
 

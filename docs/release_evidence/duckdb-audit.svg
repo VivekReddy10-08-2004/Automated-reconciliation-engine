@@ -1,21 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1500" height="500" viewBox="0 0 1500 500" role="img" aria-labelledby="title desc">
   <title id="title">DuckDB audit query for the verified reconciliation run</title>
-  <desc id="desc">Terminal-style capture showing the verified run ID, success with breaks status, provider row counts, match and break counts, staged rows, and open exceptions.</desc>
+  <desc id="desc">Terminal-style capture showing the verified three-provider run, provider-pair matches, staged rows, and open exceptions.</desc>
   <rect width="1500" height="500" rx="16" fill="#10151c"/>
   <rect width="1500" height="48" rx="16" fill="#202936"/>
   <circle cx="28" cy="24" r="7" fill="#ff5f57"/>
   <circle cx="52" cy="24" r="7" fill="#febc2e"/>
   <circle cx="76" cy="24" r="7" fill="#28c840"/>
-  <text x="750" y="30" text-anchor="middle" font-family="monospace" font-size="16" fill="#d7dde8">Task 21 — DuckDB audit evidence</text>
+  <text x="750" y="30" text-anchor="middle" font-family="monospace" font-size="16" fill="#d7dde8">Three-provider DuckDB audit evidence</text>
   <g font-family="monospace" font-size="18" fill="#d7dde8">
     <text x="28" y="86" fill="#77d9c5">$ python -c "... query pipeline_runs, staging, and exceptions ..."</text>
-    <text x="28" y="130">run_id                                status   yahoo  alpaca  match  warn  break</text>
-    <text x="28" y="164">7d6f0211-480e-58fc-a631-a9d0c5ec199d  SUCCESS      5       5      5     0      0</text>
-    <text x="28" y="218">staged_rows  symbols</text>
-    <text x="28" y="252">10           1</text>
+    <text x="28" y="130">run_id                                status   yahoo  alpaca  massive  match  warn  break</text>
+    <text x="28" y="164">26fc8ab8-34dc-5b8a-941b-6bb3e7435229  SUCCESS      8       8        8     24     0      0</text>
+    <text x="28" y="218">staged_rows  provider_pairs  symbols</text>
+    <text x="28" y="252">24           3               1</text>
     <text x="28" y="306">open_exceptions</text>
     <text x="28" y="340">0</text>
-    <text x="28" y="406" fill="#8bd49c">Audit checks passed: five aligned dates, ten source rows, no duplicate retry writes.</text>
+    <text x="28" y="406" fill="#8bd49c">Audit checks passed: eight aligned dates, 24 pairwise matches, no duplicate retry writes.</text>
     <text x="28" y="450" fill="#8994a5">Captured 2026-10-12; credentials and provider secrets are not displayed.</text>
   </g>
 </svg>

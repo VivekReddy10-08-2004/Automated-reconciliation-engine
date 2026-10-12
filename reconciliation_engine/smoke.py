@@ -23,7 +23,7 @@ from reconciliation_engine.realtime import (
     SCORED_ENDPOINT_ENV,
     validate_local_endpoint,
 )
-from reconciliation_engine.security import load_alpaca_credentials
+from reconciliation_engine.security import load_alpaca_credentials, load_massive_api_key
 from reconciliation_engine.storage.duckdb import initialize_database
 
 
@@ -33,13 +33,24 @@ REQUIRED_MODULES = (
     "reconciliation_engine.notifications",
     "reconciliation_engine.ingestion.alpaca_equities",
     "reconciliation_engine.ingestion.alpaca_options",
+    "reconciliation_engine.ingestion.massive",
+    "reconciliation_engine.ingestion.massive_equities",
+    "reconciliation_engine.ingestion.massive_options",
+    "reconciliation_engine.ingestion.massive_futures",
+    "reconciliation_engine.ingestion.providers",
     "reconciliation_engine.ingestion.yahoo_equities",
     "reconciliation_engine.ingestion.yahoo_options",
     "reconciliation_engine.reconciliation.equities",
     "reconciliation_engine.reconciliation.options",
+    "reconciliation_engine.reconciliation.futures",
     "reconciliation_engine.realtime.publisher",
     "reconciliation_engine.realtime.anomaly_scorer",
+    "reconciliation_engine.observability",
+    "reconciliation_engine.scaling.partitions",
+    "reconciliation_engine.scaling.equity_ingestion",
     "reconciliation_engine.storage.data_lake",
+    "reconciliation_engine.storage.partitioned_data_lake",
+    "reconciliation_engine.storage.retention",
     "reconciliation_engine.storage.duckdb",
 )
 
@@ -48,6 +59,9 @@ REQUIRED_TABLES = {
     "equity_bars_staging",
     "equity_reconciliation_results",
     "equity_exceptions",
+    "work_partitions",
+    "provider_request_metrics",
+    "quarantine_records",
 }
 
 
@@ -64,6 +78,9 @@ def check_configuration(env_path: str | Path = "project.env") -> dict[str, objec
     api_key, secret_key = load_alpaca_credentials(env_path)
     if api_key.lower().startswith("your_") or secret_key.lower().startswith("your_"):
         raise RuntimeError("Alpaca credentials still contain example placeholders")
+    massive_api_key = load_massive_api_key(env_path)
+    if massive_api_key.lower().startswith("your_"):
+        raise RuntimeError("Massive credentials still contain example placeholders")
 
     load_dotenv(env_path, override=False)
     symbol_value = os.getenv(SYMBOLS_ENV)
@@ -79,6 +96,7 @@ def check_configuration(env_path: str | Path = "project.env") -> dict[str, objec
 
     return {
         "credentials_configured": True,
+        "massive_credentials_configured": True,
         "symbols": symbols,
         "raw_endpoint": raw_endpoint,
         "scored_endpoint": scored_endpoint,

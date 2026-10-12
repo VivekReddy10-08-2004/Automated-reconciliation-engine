@@ -6,8 +6,9 @@ This document describes the data sources used by the reconciliation engine as it
 
 | Source | Instruments and data | Access | Implementation |
 | --- | --- | --- | --- |
-| Yahoo Finance, through `yfinance` | Equity OHLCV bars, equity option chains, continuous futures bars, FX spot bars, and Treasury-yield index proxies | Public Yahoo Finance data accessed through the third-party `yfinance` client | [`yahoo_equities.py`](reconciliation_engine/ingestion/yahoo_equities.py), [`yahoo_options.py`](reconciliation_engine/ingestion/yahoo_options.py), [`futures.py`](reconciliation_engine/ingestion/futures.py), [`swaps.py`](reconciliation_engine/ingestion/swaps.py), [`forwards.py`](reconciliation_engine/ingestion/forwards.py) |
+| Yahoo Finance, through `yfinance` | Equity OHLCV bars, equity option chains, and continuous futures bars | Public Yahoo Finance data accessed through the third-party `yfinance` client | [`yahoo_equities.py`](reconciliation_engine/ingestion/yahoo_equities.py), [`yahoo_options.py`](reconciliation_engine/ingestion/yahoo_options.py), [`futures.py`](reconciliation_engine/ingestion/futures.py) |
 | Alpaca Market Data API | Historical US equity bars and US equity option-chain snapshots | Authenticated API; coverage depends on the account's market-data entitlement | [`alpaca_equities.py`](reconciliation_engine/ingestion/alpaca_equities.py), [`alpaca_options.py`](reconciliation_engine/ingestion/alpaca_options.py) |
+| Massive REST API | US equity daily/grouped OHLCV, US option contract reference and aggregate bars, and US futures contract reference and aggregate bars | Authenticated API; the configured free plans are limited to 5 calls/minute and plan-specific history/recency | [`massive.py`](reconciliation_engine/ingestion/massive.py), [`massive_equities.py`](reconciliation_engine/ingestion/massive_equities.py), [`massive_options.py`](reconciliation_engine/ingestion/massive_options.py), [`massive_futures.py`](reconciliation_engine/ingestion/massive_futures.py) |
 
 ## Yahoo Finance via `yfinance`
 
@@ -18,8 +19,6 @@ The following data is currently requested:
 - **Equities:** daily unadjusted open, high, low, close, and volume data for the configured reconciliation symbols. Automatic Yahoo adjustment is disabled so its price basis is closer to Alpaca's raw IEX bars.
 - **Equity options:** call and put chains by expiration, including strike, contract symbol, last price, bid, ask, volume, and open interest.
 - **Continuous futures:** Yahoo symbols `ES=F`, `NQ=F`, `CL=F`, `GC=F`, and `ZN=F` by default.
-- **FX spot:** `EURUSD=X`, `GBPUSD=X`, and `USDJPY=X` for forward valuation inputs.
-- **Rate proxies:** `^IRX` and `^TNX`. The engine uses these Yahoo yield-index series as simplified rate proxies; they are not direct SOFR observations, swap curves, or executable rates.
 
 `yfinance` is an independent, unofficial client and is not affiliated with or endorsed by Yahoo. Its documentation states that the downloaded data is intended for research and educational use and directs users to Yahoo's terms for usage rights. Production deployments should validate licensing, redistribution rights, availability, and rate limits before relying on this source.
 
@@ -42,16 +41,36 @@ The code does not force a feed for option-chain requests, so the effective sourc
 
 Alpaca's broader coverage and subscription model is documented in [About Market Data API](https://docs.alpaca.markets/us/docs/about-market-data-api).
 
+## Massive REST API
+
+The project uses Massive through a small local REST client rather than a vendor
+SDK. `MASSIVE_API_KEY` is sent in an authorization header and never placed in a
+logged URL. One process-wide limiter is shared by equities, options, and
+futures; it defaults to `MASSIVE_CALLS_PER_MINUTE=5`. Cursor pagination,
+bounded retries, and `Retry-After` responses are handled centrally.
+
+- **Equities:** per-symbol unadjusted daily aggregates are available for direct
+  reconciliation. The grouped daily endpoint can acquire the entire US equity
+  market for one date in one request and is the preferred broad-coverage path.
+- **Options:** contract reference data and per-contract aggregate bars are
+  normalized. The free plan does not provide the bid/ask quote, open interest,
+  IV, or Greeks required for those comparisons, so these fields remain null.
+- **Futures:** expiring contract reference and aggregate bars are normalized.
+  The adapter preserves `session_end_date`, overnight `window_start`, and
+  settlement price. It does not treat Yahoo continuous symbols such as `GC=F`
+  as identical to an expiring Massive contract such as `GCZ6`.
+
+See Massive's [stock API overview](https://massive.com/docs/rest/stocks/overview),
+[options API overview](https://massive.com/docs/rest/options/overview), and
+[futures API overview](https://massive.com/docs/rest/futures/overview). Plan
+activation and market-data licensing remain account responsibilities.
+
 ## Synthetic, static, and derived inputs
 
 The following inputs are part of the engine but are **not external market-data sources**:
 
 | Input | How it is produced | Limitation |
 | --- | --- | --- |
-| Swap blotter | Hard-coded synthetic trades in `SWAP_BLOTTER` | Test/demo positions, not records from a trading or accounting system |
-| FX-forward blotter | Hard-coded synthetic trades in `FORWARD_BLOTTER` | Test/demo positions, not externally sourced trades |
-| Foreign interest rates | Static constants for EUR, GBP, and JPY in `FOREIGN_RATES` | Do not represent a live curve or a dated fixing |
-| Calculated FX forwards | Derived from Yahoo FX spot, a Yahoo USD-rate proxy, static foreign rates, and covered-interest-parity logic | Model output, not an executable or vendor-supplied forward quote |
 | Real-time prices | Deterministic simulated ticks based on `SIMULATED_PRICES` | No external streaming market-data connection is currently active |
 | Reconciliation metrics | Calculated from normalized source records | Differences, percentages, latency, and anomaly flags are derived results rather than source data |
 
@@ -59,11 +78,9 @@ The following inputs are part of the engine but are **not external market-data s
 
 | Reconciliation area | Inputs being compared or evaluated |
 | --- | --- |
-| Equities | Yahoo Finance bars against Alpaca IEX bars for the configured symbols |
-| Equity options | Yahoo Finance option chains against Alpaca option-chain snapshots |
-| Futures | Yahoo Finance continuous-futures bars; no second external futures provider is currently configured |
-| Swaps | Synthetic swap positions valued using simplified Yahoo yield-index proxies |
-| FX forwards | Synthetic forward positions compared with model-derived values based on Yahoo spot/rate inputs and static foreign rates |
+| Equities | Persisted pairwise control across Yahoo Finance, Alpaca IEX, and Massive. |
+| Equity options | Pairwise Yahoo, Alpaca, and Massive comparison by full contract identity; fields unavailable from a plan remain null. |
+| Futures | Yahoo continuous futures against Massive expiring contracts only when an explicit roll mapping is supplied. |
 | Real-time monitoring | Simulated ticks only; this is not currently a vendor-to-vendor live reconciliation |
 
 ## Operational considerations
@@ -71,7 +88,7 @@ The following inputs are part of the engine but are **not external market-data s
 - Source timestamps, exchange calendars, corporate-action adjustments, quote conditions, and symbol conventions can differ between providers.
 - Provider inputs are normalized to uppercase symbols and UTC-derived market dates before comparison. This reduces key mismatches but cannot make Yahoo and IEX coverage identical.
 - IEX equity data should not be assumed to match consolidated SIP data, and indicative options data should not be assumed to match OPRA.
-- Yahoo rate tickers are valuation proxies, not authoritative benchmark fixings or complete curves.
 - API credentials must remain in environment variables or an untracked environment file; never commit them to the repository.
 - External APIs can change schemas, entitlements, limits, or availability. Provider documentation and account terms should be reviewed before production use.
+- The Massive free-plan request budget is a shared scarce resource in this application. Broad equity EOD data is fetched with the grouped endpoint; option and futures contract requests must be prioritized and checkpointed rather than fanned out without bounds.
 

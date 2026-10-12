@@ -1,8 +1,8 @@
 # Reconciliation Engine Runbook
 
-This runbook covers the runnable release in this repository: the Yahoo/Alpaca equity batch control, DuckDB and Parquet audit trail, dbt equity models, webhook notifications, simulated ZeroMQ feed, anomaly scorer, read-only dashboard, local scheduling, and the batch Docker image.
+This runbook covers the runnable Yahoo/Alpaca/Massive equity batch control, DuckDB and Parquet audit trail, dbt equity models, webhook notifications, simulated ZeroMQ feed, anomaly scorer, read-only dashboard, local scheduling, and the batch Docker image.
 
-Derivative ingestion adapters and offline option reconciliation are present, but the unified derivative control reports from Task 10 are still planned. Airflow orchestration from Task 18 is also planned; the supported scheduler is currently Windows Task Scheduler or Ubuntu cron.
+Option and futures ingestion and reconciliation libraries are present, while their persisted batch orchestration remains planned. The supported scheduler is currently Windows Task Scheduler or Ubuntu cron.
 
 ## 1. Runtime configuration
 
@@ -19,7 +19,11 @@ On Windows, restrict `project.env` to the account that runs the control. Never p
 | --- | --- | --- |
 | `ALPACA_API_KEY` | Yes for a live batch | Alpaca API key |
 | `ALPACA_SECRET_KEY` | Yes for a live batch | Alpaca API secret |
+| `MASSIVE_API_KEY` | Yes for a live batch | Massive API key |
+| `MASSIVE_CALLS_PER_MINUTE` | No | Shared Massive process limit; defaults to `5` |
 | `RECONCILIATION_SYMBOLS` | No | Comma-separated equity universe; defaults to `AAPL` |
+| `RECONCILIATION_SYMBOL_BUCKETS` | No | Stable bucket count; defaults to `64` and should remain fixed after production use |
+| `RECONCILIATION_MAX_WORKERS` | No | Bounded ingestion threads; defaults to `8`, maximum `64` |
 | `WEBHOOK_URL` | No | Receives `FAILED` and `SUCCESS_WITH_BREAKS` summaries; output is printed if omitted |
 | `REALTIME_ZMQ_ENDPOINT` | No | Raw simulated-tick endpoint; defaults to `tcp://127.0.0.1:5555` |
 | `REALTIME_SCORED_ZMQ_ENDPOINT` | No | Annotated-tick endpoint; defaults to `tcp://127.0.0.1:5556` |
@@ -41,7 +45,7 @@ python -m unittest discover -s tests -v
 
 On Windows PowerShell, activate with `.venv\Scripts\Activate.ps1`.
 
-The smoke command imports release components, validates credentials without displaying them, validates the configured symbols and local ZeroMQ endpoints, and creates a temporary DuckDB schema. It makes no Yahoo or Alpaca request. To inspect and migrate an existing database schema as part of the check:
+The smoke command imports release components, validates credentials without displaying them, validates the configured symbols and local ZeroMQ endpoints, and creates a temporary DuckDB schema. It makes no Yahoo, Alpaca, or Massive request. To inspect and migrate an existing database schema as part of the check:
 
 ```sh
 python -m reconciliation_engine.smoke --db reconciliation.duckdb
@@ -70,6 +74,12 @@ python -m reconciliation_engine.batch --symbol AAPL --control-date 2026-10-09
 ```
 
 If that date/universe/version is already complete, the command returns its stored summary without provider calls, writes, or duplicate notifications. If an earlier attempt stopped after writing only part of the Parquet archive, the retry reuses the immutable files and finishes the missing work.
+
+Inspect partition progress, attempts, and failures:
+
+```sh
+python -c "import duckdb; c=duckdb.connect('reconciliation.duckdb', read_only=True); print(c.execute('select provider, status, count(*) partitions, sum(row_count) rows from work_partitions group by provider, status order by provider, status').df().to_string(index=False))"
+```
 
 Replay saved provider inputs without network access or credentials:
 
@@ -144,6 +154,7 @@ Do not use `docker compose down -v` unless deleting the persisted audit state is
 
 - The command exits with code `0` and reports `SUCCESS_WITH_BREAKS`.
 - Each `BREAK` creates an `OPEN` equity exception.
+- Each exception starts as `HIGH` priority, `UNASSIGNED`, with a 24-hour due time and a provider-aware reason code.
 - One summary notification is posted to `WEBHOOK_URL`, or printed if no webhook is configured.
 - Investigate the source values, date, tolerance, provider coverage, and market calendar before resolving the break externally. The current exception table is append-only and has no resolution command.
 
@@ -155,9 +166,9 @@ Do not use `docker compose down -v` unless deleting the persisted audit state is
 
 ### Missing market observation or mark
 
-- A Yahoo-only or Alpaca-only equity observation is retained and classified as `BREAK`, with the absent provider values stored as null.
-- An unavailable option provider creates a `BREAK` for every contract from the available side, with an explicit missing-provider reason. Only two empty inputs produce an empty comparison.
-- Futures quality reports and swap/forward `NO_MARK` outcomes belong to the planned Task 10 control layer and are not exposed by the current batch command.
+- A one-sided Yahoo, Alpaca, or Massive equity observation is retained and classified as `BREAK`, with the missing provider and pair stored explicitly.
+- An unavailable option provider creates a `BREAK` for every contract from the available side, with an explicit missing-provider reason.
+- Futures comparisons require an explicit Yahoo-continuous to Massive-contract mapping; unmapped comparisons are rejected.
 
 ## 7. Inspect the audit trail
 
@@ -200,7 +211,7 @@ data/normalized/ALPACA/equities/run_id=<run-id>/data.parquet
 
 ### Inspect scheduler logs
 
-The supported local scheduler and log locations are documented in [Scheduling](SCHEDULING.md). Airflow is not included in this release, so there are no Airflow task logs to inspect. When Task 18 is implemented, this section must be updated with the DAG ID, manual trigger command, task-log location, retry behavior, and run-ID lookup before Airflow is presented as runnable.
+The supported local scheduler and log locations are documented in [Scheduling](SCHEDULING.md). Airflow is not included in this release, so there are no Airflow task logs to inspect. If orchestration is added, this section must document the workflow ID, manual trigger command, task-log location, retry behavior, and run-ID lookup before it is presented as runnable.
 
 ## 8. Release evidence and safety checks
 

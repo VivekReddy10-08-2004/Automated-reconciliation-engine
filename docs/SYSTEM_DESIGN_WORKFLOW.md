@@ -15,9 +15,9 @@ isolated task.
 ```mermaid
 flowchart LR
     subgraph sources["Market and Trade Sources"]
-        yahoo["Yahoo Finance: equities, options, futures, rates, FX"]
+        yahoo["Yahoo Finance: equities, options, futures"]
         alpaca["Alpaca: equities, options, live ticks"]
-        blotter["Internal or synthetic swap and forward blotters"]
+        massive["Massive: equities, options, futures"]
         simulator["Deterministic tick simulator"]
     end
 
@@ -32,7 +32,7 @@ flowchart LR
         normalization["Canonical schemas (Tasks 4 and 9)"]
         quality["Schema and data-quality controls (Tasks 6 and 10)"]
         reconciliation["Equity and option reconciliation (Tasks 5 and 9)"]
-        markControls["Futures, swap, and forward controls (Task 10)"]
+        markControls["Mapped futures controls"]
         exceptionManager["Exception lifecycle (Task 8)"]
         notifier["Break and failure notifications (Task 11)"]
     end
@@ -74,15 +74,15 @@ flowchart LR
     batchRunner -->|"Invokes providers"| ingestion
     yahoo -->|"Historical market data"| ingestion
     alpaca -->|"Historical market data"| ingestion
-    blotter -->|"Booked OTC trades"| ingestion
+    massive -->|"Historical market data"| ingestion
     ingestion -->|"Archives provider payloads"| parquet
     ingestion -->|"Maps vendor fields"| normalization
     normalization -->|"Archives canonical data"| parquet
     normalization -->|"Validates records"| quality
     quality -->|"Valid equity and option rows"| reconciliation
-    quality -->|"Futures and OTC inputs"| markControls
+    quality -->|"Mapped futures inputs"| markControls
     reconciliation -->|"Stores MATCH, WARN, BREAK"| duckdb
-    markControls -->|"Stores PASS, BREAK, NO_MARK"| duckdb
+    markControls -->|"Stores MATCH or BREAK"| duckdb
     reconciliation -->|"Creates break records"| exceptionManager
     markControls -->|"Creates control breaks"| exceptionManager
     exceptionManager -->|"Persists open exceptions"| duckdb
@@ -120,26 +120,26 @@ flowchart LR
 flowchart TD
     trigger["Weekday trigger after US market close"] --> config["Load configuration and validate credentials"]
     config --> runId["Create run ID and RUNNING audit record"]
-    runId --> ingestYahoo["Fetch Yahoo equities, options, futures, rates, and FX"]
+    runId --> ingestYahoo["Fetch Yahoo equities, options, and futures"]
     runId --> ingestAlpaca["Fetch Alpaca equities and options"]
-    runId --> loadBlotters["Load swap and forward blotters"]
+    runId --> ingestMassive["Fetch Massive equities, options, and futures"]
 
     ingestYahoo --> archiveRaw["Archive immutable raw payloads by run ID"]
     ingestAlpaca --> archiveRaw
-    loadBlotters --> archiveRaw
+    ingestMassive --> archiveRaw
     archiveRaw --> normalize["Normalize instrument-specific canonical schemas"]
     normalize --> validate["Validate schema, dates, values, and required market marks"]
     validate --> stage["Write normalized Parquet and DuckDB staging rows"]
 
     stage --> equityRecon["Reconcile equities by symbol and trade date"]
     stage --> optionRecon["Reconcile options by full contract identity"]
-    stage --> derivativeControls["Run futures quality and OTC mark controls"]
+    stage --> derivativeControls["Run mapped futures reconciliation"]
 
     equityRecon --> transform["Build dbt reconciliation facts"]
     optionRecon --> transform
     derivativeControls --> results["Persist control results"]
     transform --> results
-    results --> outcome{"Any BREAK, NO_MARK, or failure?"}
+    results --> outcome{"Any BREAK or failure?"}
 
     outcome -->|"No"| success["Finish as SUCCESS"]
     outcome -->|"Break or missing mark"| exceptions["Create OPEN exceptions"]
@@ -225,8 +225,6 @@ literal full-architecture release. Purple nodes remain on the roadmap.
 | Equity | `symbol, trade_date` | `MATCH`, `WARN`, `BREAK` |
 | Option | `underlying, expiry, strike, option_type` | `MATCH`, `WARN`, `BREAK` |
 | Future | `symbol, trade_date` | data-quality `PASS` or `BREAK` |
-| Swap | `trade_id, trade_date` | booked-versus-market `PASS`, `BREAK`, or `NO_MARK` |
-| Forward | `trade_id, trade_date` | booked-versus-market `PASS`, `BREAK`, or `NO_MARK` |
 | Real-time tick | `symbol, exchange_timestamp` | normal or explained anomaly |
 
 ## 5. Dashboard and Security Acceptance Criteria

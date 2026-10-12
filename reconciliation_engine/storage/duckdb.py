@@ -1,5 +1,8 @@
 import duckdb
 import pandas as pd
+from datetime import datetime, timezone
+
+from reconciliation_engine.scaling.partitions import WorkPartition
 
 from reconciliation_engine.security import restrict_file_permissions
 
@@ -28,7 +31,7 @@ def _migrate_equity_staging_primary_key(conn: duckdb.DuckDBPyConnection) -> None
             high FLOAT,
             low FLOAT,
             close FLOAT,
-            volume BIGINT,
+            volume DOUBLE,
             PRIMARY KEY (run_id, source, symbol, timestamp),
             FOREIGN KEY (run_id) REFERENCES pipeline_runs(run_id)
         )
@@ -37,6 +40,50 @@ def _migrate_equity_staging_primary_key(conn: duckdb.DuckDBPyConnection) -> None
     conn.execute("INSERT INTO equity_bars_staging_v2 SELECT * FROM equity_bars_staging")
     conn.execute("DROP TABLE equity_bars_staging")
     conn.execute("ALTER TABLE equity_bars_staging_v2 RENAME TO equity_bars_staging")
+
+
+def _migrate_reconciliation_results(conn: duckdb.DuckDBPyConnection) -> None:
+    """Add provider-pair lineage to result rows created by older releases."""
+    columns = {
+        row[1]
+        for row in conn.execute(
+            "PRAGMA table_info('equity_reconciliation_results')"
+        ).fetchall()
+    }
+    if "source_a" in columns:
+        return
+    conn.execute(
+        """
+        CREATE TABLE equity_reconciliation_results_v2 (
+            run_id VARCHAR,
+            symbol VARCHAR,
+            timestamp TIMESTAMP,
+            metric_name VARCHAR,
+            source_a VARCHAR,
+            source_b VARCHAR,
+            source_a_value DOUBLE,
+            source_b_value DOUBLE,
+            difference DOUBLE,
+            is_discrepancy BOOLEAN,
+            PRIMARY KEY (
+                run_id, symbol, timestamp, metric_name, source_a, source_b
+            )
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO equity_reconciliation_results_v2
+        SELECT run_id, symbol, timestamp, metric_name, 'YAHOO', 'ALPACA',
+               source_a_value, source_b_value, difference, is_discrepancy
+        FROM equity_reconciliation_results
+        """
+    )
+    conn.execute("DROP TABLE equity_reconciliation_results")
+    conn.execute(
+        "ALTER TABLE equity_reconciliation_results_v2 "
+        "RENAME TO equity_reconciliation_results"
+    )
 
 def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
     with duckdb.connect(db_path) as conn:
@@ -52,10 +99,15 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
                 status VARCHAR,
                 yahoo_row_count BIGINT,
                 alpaca_row_count BIGINT,
+                massive_row_count BIGINT DEFAULT 0,
                 match_count BIGINT,
                 break_count BIGINT               
             )
             """
+        )
+        conn.execute(
+            "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS "
+            "massive_row_count BIGINT DEFAULT 0"
         )
 
         #equity bars staging table
@@ -70,13 +122,16 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
                 high FLOAT,
                 low FLOAT,
                 close FLOAT,
-                volume BIGINT,
+                volume DOUBLE,
                 PRIMARY KEY (run_id, source, symbol, timestamp),
                 FOREIGN KEY (run_id) REFERENCES pipeline_runs(run_id)
             )
             """
         )
         _migrate_equity_staging_primary_key(conn)
+        conn.execute(
+            "ALTER TABLE equity_bars_staging ALTER COLUMN volume SET DATA TYPE DOUBLE"
+        )
 
         #equity reconciliation results table
         conn.execute(
@@ -86,14 +141,19 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
                 symbol VARCHAR,
                 timestamp TIMESTAMP,
                 metric_name VARCHAR,
+                source_a VARCHAR,
+                source_b VARCHAR,
                 source_a_value DOUBLE,
                 source_b_value DOUBLE,
                 difference DOUBLE,
                 is_discrepancy BOOLEAN,
-                PRIMARY KEY (run_id, symbol, timestamp, metric_name)
+                PRIMARY KEY (
+                    run_id, symbol, timestamp, metric_name, source_a, source_b
+                )
             )
         """
         )
+        _migrate_reconciliation_results(conn)
 
         #create exceptions table
         conn.execute(
@@ -107,14 +167,249 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
                 yahoo_close DOUBLE,
                 alpaca_close DOUBLE,
                 close_difference DOUBLE,
+                source_a VARCHAR,
+                source_b VARCHAR,
+                source_a_close DOUBLE,
+                source_b_close DOUBLE,
                 severity VARCHAR,
+                priority VARCHAR,
                 status VARCHAR,
+                owner VARCHAR,
+                reason_code VARCHAR,
+                due_at TIMESTAMP,
+                resolved_at TIMESTAMP,
                 created_at TIMESTAMP,
                 FOREIGN KEY (run_id) REFERENCES pipeline_runs(run_id)
             )
             """
         )
+        for definition in (
+            "source_a VARCHAR",
+            "source_b VARCHAR",
+            "source_a_close DOUBLE",
+            "source_b_close DOUBLE",
+            "priority VARCHAR",
+            "owner VARCHAR",
+            "reason_code VARCHAR",
+            "due_at TIMESTAMP",
+            "resolved_at TIMESTAMP",
+        ):
+            conn.execute(
+                f"ALTER TABLE equity_exceptions ADD COLUMN IF NOT EXISTS {definition}"
+            )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS work_partitions (
+                partition_id VARCHAR PRIMARY KEY,
+                run_id VARCHAR NOT NULL,
+                control_date DATE NOT NULL,
+                instrument_type VARCHAR NOT NULL,
+                symbol_bucket INTEGER NOT NULL,
+                provider VARCHAR NOT NULL,
+                symbols_json VARCHAR NOT NULL,
+                status VARCHAR NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                started_at TIMESTAMP,
+                finished_at TIMESTAMP,
+                error_type VARCHAR,
+                error_message VARCHAR,
+                row_count BIGINT,
+                UNIQUE (
+                    run_id, provider, instrument_type, symbol_bucket
+                )
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS provider_request_metrics (
+                partition_id VARCHAR,
+                run_id VARCHAR,
+                provider VARCHAR,
+                instrument_type VARCHAR,
+                symbol_bucket INTEGER,
+                requested_symbols INTEGER,
+                returned_rows BIGINT,
+                latency_ms DOUBLE,
+                reused_archive BOOLEAN,
+                outcome_status VARCHAR,
+                error_type VARCHAR,
+                recorded_at TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            "ALTER TABLE provider_request_metrics ADD COLUMN IF NOT EXISTS "
+            "outcome_status VARCHAR"
+        )
+        conn.execute(
+            "ALTER TABLE provider_request_metrics ADD COLUMN IF NOT EXISTS "
+            "error_type VARCHAR"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quarantine_records (
+                quarantine_id VARCHAR PRIMARY KEY,
+                partition_id VARCHAR,
+                run_id VARCHAR,
+                provider VARCHAR,
+                instrument_type VARCHAR,
+                symbol_bucket INTEGER,
+                reason VARCHAR,
+                raw_archive_path VARCHAR,
+                created_at TIMESTAMP
+            )
+            """
+        )
     restrict_file_permissions(db_path)
+
+
+def register_work_partitions(
+    partitions: tuple[WorkPartition, ...],
+    db_path: str = "reconciliation.duckdb",
+) -> None:
+    """Create pending manifest rows without resetting previous attempts."""
+    if not partitions:
+        return
+    rows = [
+        (
+            item.partition_id,
+            item.run_id,
+            item.control_date,
+            item.instrument_type,
+            item.symbol_bucket,
+            item.provider,
+            item.symbols_json,
+            "PENDING",
+        )
+        for item in partitions
+    ]
+    with duckdb.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO work_partitions (
+                partition_id, run_id, control_date, instrument_type,
+                symbol_bucket, provider, symbols_json, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (partition_id) DO NOTHING
+            """,
+            rows,
+        )
+
+
+def mark_partition_running(
+    partition_id: str,
+    db_path: str = "reconciliation.duckdb",
+) -> None:
+    with duckdb.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE work_partitions
+            SET status = 'RUNNING', attempts = attempts + 1,
+                started_at = ?, finished_at = NULL,
+                error_type = NULL, error_message = NULL
+            WHERE partition_id = ? AND status <> 'SUCCESS'
+            """,
+            [datetime.now(timezone.utc), partition_id],
+        )
+
+
+def finish_work_partition(
+    partition_id: str,
+    *,
+    status: str,
+    row_count: int = 0,
+    error: Exception | None = None,
+    db_path: str = "reconciliation.duckdb",
+) -> None:
+    if status not in {"SUCCESS", "FAILED"}:
+        raise ValueError("Partition status must be SUCCESS or FAILED")
+    with duckdb.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE work_partitions
+            SET status = ?, finished_at = ?, row_count = ?,
+                error_type = ?, error_message = ?
+            WHERE partition_id = ?
+            """,
+            [
+                status,
+                datetime.now(timezone.utc),
+                row_count,
+                type(error).__name__ if error else None,
+                str(error)[:1000] if error else None,
+                partition_id,
+            ],
+        )
+
+
+def record_provider_metric(
+    partition: WorkPartition,
+    *,
+    returned_rows: int,
+    latency_ms: float,
+    reused_archive: bool,
+    outcome_status: str = "SUCCESS",
+    error_type: str | None = None,
+    db_path: str = "reconciliation.duckdb",
+) -> None:
+    with duckdb.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO provider_request_metrics (
+                partition_id, run_id, provider, instrument_type, symbol_bucket,
+                requested_symbols, returned_rows, latency_ms, reused_archive,
+                outcome_status, error_type, recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                partition.partition_id,
+                partition.run_id,
+                partition.provider,
+                partition.instrument_type,
+                partition.symbol_bucket,
+                len(partition.symbols),
+                returned_rows,
+                latency_ms,
+                reused_archive,
+                outcome_status,
+                error_type,
+                datetime.now(timezone.utc),
+            ],
+        )
+
+
+def record_quarantine(
+    partition: WorkPartition,
+    *,
+    reason: str,
+    raw_archive_path: str | None,
+    db_path: str = "reconciliation.duckdb",
+) -> None:
+    from uuid import NAMESPACE_URL, uuid5
+
+    quarantine_id = str(
+        uuid5(NAMESPACE_URL, f"{partition.partition_id}|{reason[:500]}")
+    )
+    with duckdb.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO quarantine_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (quarantine_id) DO NOTHING
+            """,
+            [
+                quarantine_id,
+                partition.partition_id,
+                partition.run_id,
+                partition.provider,
+                partition.instrument_type,
+                partition.symbol_bucket,
+                reason[:1000],
+                raw_archive_path,
+                datetime.now(timezone.utc),
+            ],
+        )
 
 def save_pipeline_run(
     run_id: str,
@@ -225,12 +520,14 @@ def save_reconciliation_results(
                 symbol,
                 timestamp,
                 metric_name,
+                source_a,
+                source_b,
                 source_a_value,
                 source_b_value,
                 difference,
                 is_discrepancy
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             results,
         )
@@ -239,6 +536,13 @@ def save_reconciliation_results(
 def _reconciliation_rows(df: pd.DataFrame, run_id: str) -> list[tuple]:
     results: list[tuple] = []
     for _, row in df.iterrows():
+        is_pairwise = "source_a" in df.columns
+        source_a = row["source_a"] if is_pairwise else "YAHOO"
+        source_b = row["source_b"] if is_pairwise else "ALPACA"
+        close_a = row["source_a_close"] if is_pairwise else row["yahoo_close"]
+        close_b = row["source_b_close"] if is_pairwise else row["alpaca_close"]
+        volume_a = row["source_a_volume"] if is_pairwise else row["yahoo_volume"]
+        volume_b = row["source_b_volume"] if is_pairwise else row["alpaca_volume"]
         results.extend(
             [
             (
@@ -246,8 +550,10 @@ def _reconciliation_rows(df: pd.DataFrame, run_id: str) -> list[tuple]:
                 row["symbol"],
                 row["trade_date"],
                 "close",
-                row["yahoo_close"],
-                row["alpaca_close"],
+                source_a,
+                source_b,
+                close_a,
+                close_b,
                 row["close_difference"],
                 row["status"] == "BREAK",
             ),
@@ -256,8 +562,10 @@ def _reconciliation_rows(df: pd.DataFrame, run_id: str) -> list[tuple]:
                 row["symbol"],
                 row["trade_date"],
                 "volume",
-                row["yahoo_volume"],
-                row["alpaca_volume"],
+                source_a,
+                source_b,
+                volume_a,
+                volume_b,
                 row["volume_difference"],
                 row["status"] == "BREAK",
             ),
@@ -279,14 +587,21 @@ def save_exceptions(df: pd.DataFrame, db_path: str = "reconciliation.duckdb") ->
                 instrument_type,
                 symbol,
                 trade_date,
-                yahoo_close,
-                alpaca_close,
+                source_a,
+                source_b,
+                source_a_close,
+                source_b_close,
                 close_difference,
                 severity,
+                priority,
                 status,
+                owner,
+                reason_code,
+                due_at,
+                resolved_at,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -305,6 +620,7 @@ def get_pipeline_run(
         row = conn.execute(
             """
             SELECT run_id, status, yahoo_row_count, alpaca_row_count,
+                   massive_row_count,
                    match_count, break_count
             FROM pipeline_runs
             WHERE run_id = ?
@@ -318,6 +634,7 @@ def get_pipeline_run(
         "status",
         "yahoo_row_count",
         "alpaca_row_count",
+        "massive_row_count",
         "match_count",
         "break_count",
     )
@@ -334,6 +651,7 @@ def persist_equity_run(
     alpaca_bars: pd.DataFrame,
     reconciliation: pd.DataFrame,
     exceptions: pd.DataFrame,
+    massive_bars: pd.DataFrame | None = None,
     db_path: str = "reconciliation.duckdb",
 ) -> bool:
     """Atomically persist a complete equity run; return False if already stored."""
@@ -343,6 +661,8 @@ def persist_equity_run(
         *_equity_bar_rows(yahoo_bars, "YAHOO", run_id),
         *_equity_bar_rows(alpaca_bars, "ALPACA", run_id),
     ]
+    if massive_bars is not None:
+        bar_rows.extend(_equity_bar_rows(massive_bars, "MASSIVE", run_id))
     result_rows = _reconciliation_rows(reconciliation, run_id)
     exception_rows = _exception_rows(exceptions)
 
@@ -360,9 +680,10 @@ def persist_equity_run(
                 """
                 INSERT INTO pipeline_runs (
                     run_id, started_at, finished_at, status,
-                    yahoo_row_count, alpaca_row_count, match_count, break_count
+                    yahoo_row_count, alpaca_row_count, massive_row_count,
+                    match_count, break_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -371,6 +692,7 @@ def persist_equity_run(
                     status,
                     len(yahoo_bars),
                     len(alpaca_bars),
+                    len(massive_bars) if massive_bars is not None else 0,
                     match_count,
                     break_count,
                 ),
@@ -388,9 +710,9 @@ def persist_equity_run(
                 conn.executemany(
                     """
                     INSERT INTO equity_reconciliation_results
-                    (run_id, symbol, timestamp, metric_name, source_a_value,
-                     source_b_value, difference, is_discrepancy)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, symbol, timestamp, metric_name, source_a, source_b,
+                     source_a_value, source_b_value, difference, is_discrepancy)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     result_rows,
                 )
@@ -399,9 +721,10 @@ def persist_equity_run(
                     """
                     INSERT INTO equity_exceptions
                     (exception_id, run_id, instrument_type, symbol, trade_date,
-                     yahoo_close, alpaca_close, close_difference, severity,
-                     status, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     source_a, source_b, source_a_close, source_b_close,
+                     close_difference, severity, priority, status, owner,
+                     reason_code, due_at, resolved_at, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     exception_rows,
                 )

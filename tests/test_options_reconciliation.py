@@ -5,6 +5,7 @@ import pandas as pd
 from reconciliation_engine.reconciliation.options import (
     OUTPUT_COLUMNS,
     reconcile_option_chain,
+    reconcile_option_sources,
 )
 
 
@@ -69,6 +70,23 @@ class OptionReconciliationTests(unittest.TestCase):
         self.assertEqual(result["status"].tolist(), ["MATCH", "BREAK"])
         self.assertAlmostEqual(result.iloc[0]["close_difference"], -0.03)
         self.assertAlmostEqual(result.iloc[1]["close_difference"], -0.10)
+
+    def test_three_provider_pairs_keep_massive_lineage(self):
+        massive = self.yahoo.copy()
+        massive["close"] = [3.0, 2.0]
+        massive[["bid", "ask"]] = pd.NA
+
+        result = reconcile_option_sources(
+            {"YAHOO": self.yahoo, "ALPACA": self.yahoo.copy(), "MASSIVE": massive}
+        )
+
+        self.assertEqual(len(result), 6)
+        self.assertEqual(
+            set(zip(result["source_a"], result["source_b"])),
+            {("YAHOO", "ALPACA"), ("YAHOO", "MASSIVE"), ("ALPACA", "MASSIVE")},
+        )
+        self.assertEqual((result["status"] == "BREAK").sum(), 4)
+
 
     def test_matching_uses_full_option_identity(self):
         alpaca_put = self.alpaca.iloc[[0]].copy()

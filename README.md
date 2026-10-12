@@ -1,18 +1,18 @@
 # Automated Financial Data Ingestion & Reconciliation Engine
 
-A Python MVP that fetches equity data from Yahoo Finance and Alpaca, normalizes both sources into one schema, and flags cross-source closing-price differences.
+A Python reconciliation engine for equities, equity options, and futures using Yahoo Finance, Alpaca, and Massive.
 
 ```text
-Yahoo + Alpaca -> normalize -> DuckDB + Parquet -> reconcile -> exceptions/notification
-                                      |
-                                      +-> dbt equity facts -> read-only dashboard
+Yahoo + Alpaca + Massive -> normalize -> DuckDB + Parquet
+                                      -> provider-pair reconciliation
+                                      -> exceptions + dbt facts + dashboard
 
 simulated ticks -> ZeroMQ -> anomaly scorer -> ZeroMQ -> read-only dashboard
 ```
 
-The supported release is intentionally honest about its boundary: the equity
-batch and simulated real-time paths are runnable; unified derivative controls
-and Airflow orchestration remain planned. See the [operator runbook](docs/RUNBOOK.md)
+The equity three-provider batch and simulated real-time paths are runnable.
+Options and futures have provider-aware ingestion and reconciliation libraries;
+their persisted batch orchestration remains planned. See the [operator runbook](docs/RUNBOOK.md)
 for end-to-end commands and failure handling.
 
 ## Visual Walkthrough
@@ -23,9 +23,10 @@ for end-to-end commands and failure handling.
 python -m reconciliation_engine.batch --symbol AAPL
 ```
 
-The command fetches both providers, reconciles their observations, stores one
+The command fetches all three providers, reconciles every provider pair, stores one
 auditable `run_id`, and creates exceptions for breaks. This verified example
-aligned five market dates and produced five matches with no breaks:
+aligned eight market dates across three providers and produced 24 pairwise
+matches with no breaks:
 
 ![DuckDB audit evidence showing the stored run, staging rows, and open exceptions](docs/release_evidence/duckdb-audit.svg)
 
@@ -59,11 +60,15 @@ and results are recorded in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 - Normalized Yahoo Finance option chains for calls and puts
 - Normalized Alpaca option chains using the same canonical option schema
 - Normalized Alpaca daily equity bars using the same equity schema
-- Equity reconciliation report with Yahoo/Alpaca close and volume differences
+- Normalized Massive equity, option, and futures data behind one quota controller
+- Equity facts for Yahoo/Alpaca, Yahoo/Massive, and Alpaca/Massive
 - Versioned dbt models for typed staging, provider pairing, and reconciliation facts
-- Offline-tested Yahoo/Alpaca option reconciliation by full contract identity
+- Offline-tested three-provider option reconciliation by full contract identity
+- Yahoo/Massive futures reconciliation with mandatory contract-roll mapping
 - `MATCH` / `WARN` / `BREAK` status using explicit close-price tolerances
 - Immutable raw and normalized Parquet archives partitioned by source and run ID
+- Deterministic provider/symbol-bucket checkpoints with bounded parallel ingestion
+- Partition metrics, quarantine records, structured events, and exception SLAs
 - Read-only DuckDB dashboard for latest breaks and operational analytics
 - Local ZeroMQ publish/subscribe feed with deterministic simulated equity ticks
 - Explainable prior-price anomaly scoring with a separate annotated-tick feed
@@ -74,10 +79,11 @@ and results are recorded in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 
 | Concern | Product behavior |
 | --- | --- |
-| Missing provider observations | Equity and option comparisons use full outer joins. A one-sided observation is retained as a `BREAK`; option results include `MISSING_YAHOO_CONTRACT` or `MISSING_ALPACA_CONTRACT`. |
-| Provider alignment | Both feeds use the same explicit date window; Yahoo requests unadjusted prices to match Alpaca's raw IEX bars. Symbols and dates are normalized, and Python/dbt share hybrid limits: warning above the greater of `$0.01` or `0.10%`, break above the greater of `$0.05` or `0.50%`. |
-| Data validation | Equity inputs reject missing columns, nulls, non-numeric OHLCV values, non-finite or negative values, fractional volume, duplicate `symbol/trade_date` keys, and inconsistent OHLC ranges. Column order and unrelated provider fields do not matter. |
+| Missing provider observations | Every Yahoo/Alpaca/Massive provider pair uses a full outer comparison. A one-sided observation remains a `BREAK` with the missing provider named explicitly. |
+| Provider alignment | All equity providers use the same configured window; Yahoo and Massive request unadjusted prices to align with Alpaca's raw IEX bars. Symbols and dates are normalized, and Python/dbt share hybrid limits: warning above the greater of `$0.01` or `0.10%`, break above the greater of `$0.05` or `0.50%`. |
+| Data validation | Equity inputs reject missing columns, nulls, non-numeric OHLCV values, non-finite or negative values, duplicate `symbol/trade_date` keys, and inconsistent OHLC ranges. Numeric fractional aggregate volume is preserved because some providers report it. |
 | Safe retries | The control date, sorted symbol universe, and rule version produce a deterministic run ID. A completed retry performs no provider calls or writes. DuckDB commits the run, stages, results, and exceptions in one transaction; interrupted Parquet writes are immutable and resumable. |
+| Bounded scale | Symbols use stable hash buckets and each provider/bucket is independently retryable. Worker concurrency is capped, while Massive also enforces its shared calls-per-minute budget. |
 
 Provider alignment does not imply identical prices. IEX versus broader-market
 coverage, quote timing, and vendor policies can create legitimate differences;
@@ -86,8 +92,12 @@ as critical breaks.
 
 ## Run
 
-1. Copy `project.env.example` to `project.env`, add `ALPACA_API_KEY` and
-   `ALPACA_SECRET_KEY`, and set the desired `RECONCILIATION_SYMBOLS` universe.
+1. Copy `project.env.example` to `project.env`, add `ALPACA_API_KEY`,
+   `ALPACA_SECRET_KEY`, and `MASSIVE_API_KEY`, then set the desired
+   `RECONCILIATION_SYMBOLS` universe. Massive-backed commands share the
+   `MASSIVE_CALLS_PER_MINUTE=5` safety limit. Use
+   `RECONCILIATION_SYMBOL_BUCKETS` and `RECONCILIATION_MAX_WORKERS` to tune
+   deterministic partitioning and bounded concurrency.
    On POSIX systems, run `chmod 600 project.env`.
 2. Install dependencies with `pip install -r requirements.txt`.
 3. Run the offline release check. It validates imports, configuration, local
@@ -105,7 +115,7 @@ python -m reconciliation_engine.batch
 
 The command compares recent daily bars for the comma-separated symbols in
 `RECONCILIATION_SYMBOLS` (default: `AAPL`), saves the audit trail to DuckDB, and
-archives Yahoo, Alpaca, and reconciliation data under `data/`. Each archive
+archives Yahoo, Alpaca, Massive, and reconciliation data under `data/`. Each archive
 contains its `run_id` and an existing run file is never overwritten.
 
 One logical run is allowed for each US-market control date, symbol universe,
@@ -130,7 +140,7 @@ case-normalized, de-duplicated, and validated before either provider is called.
 The dashboard requires no separate configuration: it reads the instruments
 stored by the selected reconciliation run.
 
-Replay a saved run without calling Yahoo or Alpaca:
+Replay a saved run without calling Yahoo, Alpaca, or Massive:
 
 ```powershell
 python -m reconciliation_engine.batch --replay-run-id <run-id>
@@ -142,7 +152,12 @@ Provider files use this layout:
 data/raw/<SOURCE>/equities/run_id=<run-id>/payload.parquet
 data/normalized/<SOURCE>/equities/run_id=<run-id>/data.parquet
 data/reconciliation/equities/run_id=<run-id>/results.parquet
+data/partitions/<raw|normalized>/control_date=<date>/instrument_type=EQUITY/symbol_bucket=<bucket>/provider=<SOURCE>/partition_id=<partition-id>/<file>.parquet
 ```
+
+See [Scalability and Deployment Model](docs/SCALABILITY.md) for partition
+retries, provider isolation, retention, operational metrics, and the production
+transition from local DuckDB to object storage plus transactional workflow state.
 
 Run the offline reconciliation tests without API credentials or network access:
 
@@ -285,7 +300,7 @@ weekdays, after the regular US equity-market close.
 - API clients load credentials only when a provider call is made; tests and analytics do not need secrets.
 - DuckDB files are restricted to the current OS user when initialized.
 - The dashboard reads curated reconciliation results and aggregate metrics, not raw credential or payload data.
-- If a key may have been exposed, revoke or rotate it at Alpaca; changing the local file does not invalidate a copied key.
+- If a key may have been exposed, revoke or rotate it at Alpaca or Massive as applicable; changing the local file does not invalidate a copied key.
 
 See [docs/DATA_SECURITY.md](docs/DATA_SECURITY.md) for the threat model and production controls.
 See [DATA_SOURCES.md](DATA_SOURCES.md) for provider coverage, entitlements,
@@ -304,11 +319,15 @@ Automated-reconciliation-engine/
 │   ├── ingestion/                 # Provider adapters and normalization
 │   │   ├── alpaca_equities.py
 │   │   ├── alpaca_options.py
+│   │   ├── massive.py             # Shared auth, quota, retry, pagination
+│   │   ├── massive_equities.py
+│   │   ├── massive_options.py
+│   │   ├── massive_futures.py
+│   │   ├── providers.py           # Canonical provider adapter contract
 │   │   ├── yahoo_equities.py
 │   │   ├── yahoo_options.py
-│   │   ├── futures.py
-│   │   ├── swaps.py
-│   │   └── forwards.py
+│   │   └── futures.py
+│   ├── scaling/                   # Stable partitions and bounded execution
 │   ├── reconciliation/            # Comparison rules and exceptions
 │   │   ├── equities.py
 │   │   ├── options.py
@@ -342,13 +361,20 @@ rules used throughout the project.
 
 ## Options Data Availability
 
-Comparable Alpaca option contracts may be unavailable because of account entitlements, subscription level, contract expiration, or provider coverage. The project does not replace missing Alpaca observations with Yahoo values or synthetic prices and does not report an unavailable comparison as a `MATCH`.
+Comparable option contracts may be unavailable because of account entitlements, subscription level, expiration, or provider coverage. The project does not replace missing observations with another provider's values or synthetic prices and does not report an unavailable comparison as a `MATCH`.
 
-When one provider returns no option contracts, every contract from the available provider is retained as a `BREAK` with an explicit missing-provider reason. Only a comparison where both providers are empty returns an empty result. Offline fixtures prove matched, price-break, missing-contract, snapshot-date, and duplicate-contract behavior independently of vendor access.
+When one provider returns no option contracts, every contract from an available provider is retained as a pair-specific `BREAK`. A provider pair returns no rows only when both sides are empty. Offline fixtures prove matched, price-break, missing-contract, snapshot-date, and duplicate-contract behavior independently of vendor access.
+
+Massive adds option contract discovery and EOD aggregate bars. On the free
+plan, quote, open-interest, IV, and Greek fields are not substituted with zeros
+or inferred values; they remain unavailable. Massive also adds expiring
+futures-contract and session-bar ingestion. Because Yahoo exposes continuous
+futures while Massive exposes specific contracts, a configured roll mapping is
+required before those records can become a valid reconciliation pair.
 
 ## Planned Next Steps
 
-- Add futures quality reporting and swap/forward booked-versus-market controls
+- Add persisted futures quality reporting with explicit continuous-to-expiring contract roll mappings
 - Add an idempotent Airflow DAG with documented task-log inspection
 - Extend DuckDB/Parquet/dbt coverage to options and derivative controls
 - Add a live option reconciliation command with an explicit unavailable-data message

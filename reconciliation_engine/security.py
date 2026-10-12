@@ -49,3 +49,17 @@ def load_alpaca_credentials(env_path: str | Path = "project.env") -> tuple[str, 
     if not api_key or not secret_key:
         raise RuntimeError("Alpaca API credentials are not configured")
     return api_key, secret_key
+
+
+def load_massive_api_key(env_path: str | Path = "project.env") -> str:
+    """Load the Massive API key without exposing it to callers or logs."""
+    api_key = os.getenv("MASSIVE_API_KEY")
+    if api_key:
+        return api_key
+
+    secret_file = validate_private_file(env_path)
+    load_dotenv(secret_file, override=False)
+    api_key = os.getenv("MASSIVE_API_KEY")
+    if not api_key:
+        raise RuntimeError("MASSIVE_API_KEY is not configured")
+    return api_key

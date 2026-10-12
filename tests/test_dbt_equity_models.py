@@ -8,7 +8,7 @@ import unittest
 import duckdb
 import pandas as pd
 
-from reconciliation_engine.reconciliation.equities import reconcile_equity_bars
+from reconciliation_engine.reconciliation.equities import reconcile_equity_sources
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -74,8 +74,13 @@ class DbtEquityModelTests(unittest.TestCase):
         rows = []
         yahoo_close = [100.00, 100.00, 100.00]
         alpaca_close = [100.00, 99.80, 99.00]
+        massive_close = [100.00, 100.00, 100.00]
         dates = ["2026-10-07", "2026-10-08", "2026-10-09"]
-        for source, closes in (("YAHOO", yahoo_close), ("ALPACA", alpaca_close)):
+        for source, closes in (
+            ("YAHOO", yahoo_close),
+            ("ALPACA", alpaca_close),
+            ("MASSIVE", massive_close),
+        ):
             for trade_date, close in zip(dates, closes):
                 rows.append(
                     ("AAPL", "saved-run", source, trade_date, 99, 101, 98, close, 1000)
@@ -88,12 +93,13 @@ class DbtEquityModelTests(unittest.TestCase):
         with duckdb.connect(str(self.db_path), read_only=True) as connection:
             actual = connection.execute(
                 """
-                select symbol, trade_date, yahoo_close, alpaca_close,
-                       close_difference, yahoo_volume, alpaca_volume,
-                       volume_difference, status
+                select symbol, trade_date, source_a, source_b,
+                       source_a_close, source_b_close, close_difference,
+                       source_a_volume, source_b_volume, volume_difference,
+                       status, break_reason
                 from fct_equity_reconciliation
                 where run_id = 'saved-run'
-                order by trade_date
+                order by source_a, source_b, trade_date
                 """
             ).fetchdf()
         actual["trade_date"] = pd.to_datetime(actual["trade_date"]).dt.date
@@ -111,16 +117,30 @@ class DbtEquityModelTests(unittest.TestCase):
                 }
             )
 
-        expected = reconcile_equity_bars(
-            provider_frame(yahoo_close),
-            provider_frame(alpaca_close),
+        expected = reconcile_equity_sources(
+            {
+                "YAHOO": provider_frame(yahoo_close),
+                "ALPACA": provider_frame(alpaca_close),
+                "MASSIVE": provider_frame(massive_close),
+            },
             close_tolerance=0.05,
             warn_tolerance=0.01,
             break_pct_tolerance=0.005,
             warn_pct_tolerance=0.001,
         )
-        pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
-        self.assertEqual(actual["status"].tolist(), ["MATCH", "WARN", "BREAK"])
+        expected = expected.sort_values(
+            ["source_a", "source_b", "trade_date"]
+        ).reset_index(drop=True)
+        self.assertEqual(
+            actual["break_reason"].fillna("MISSING").tolist(),
+            expected["break_reason"].fillna("MISSING").tolist(),
+        )
+        pd.testing.assert_frame_equal(
+            actual.drop(columns="break_reason"),
+            expected.drop(columns="break_reason"),
+            check_dtype=False,
+        )
+        self.assertEqual(set(actual["status"]), {"MATCH", "WARN", "BREAK"})
 
     def test_duplicate_source_keys_fail_the_dbt_test(self):
         duplicated = (
@@ -155,16 +175,18 @@ class DbtEquityModelTests(unittest.TestCase):
         with duckdb.connect(str(self.db_path), read_only=True) as connection:
             actual = connection.execute(
                 """
-                select trade_date, yahoo_close, alpaca_close, status
+                select trade_date, source_a, source_b, source_a_close,
+                       source_b_close, status
                 from fct_equity_reconciliation
                 where run_id = 'missing-run'
-                order by trade_date
+                order by trade_date, source_a, source_b
                 """
             ).fetchdf()
 
-        self.assertEqual(actual["status"].tolist(), ["BREAK", "BREAK"])
-        self.assertEqual(actual["yahoo_close"].notna().sum(), 1)
-        self.assertEqual(actual["alpaca_close"].notna().sum(), 1)
+        self.assertEqual(len(actual), 6)
+        self.assertEqual(set(actual["status"]), {"BREAK"})
+        self.assertGreater(actual["source_a_close"].isna().sum(), 0)
+        self.assertGreater(actual["source_b_close"].isna().sum(), 0)
 
 
 if __name__ == "__main__":

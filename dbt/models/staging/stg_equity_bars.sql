@@ -8,7 +8,7 @@ with typed_source as (
         cast(high as double) as high,
         cast(low as double) as low,
         cast(close as double) as close,
-        cast(volume as bigint) as volume
+        cast(volume as double) as volume
     from {{ source('reconciliation', 'equity_bars_staging') }}
 ),
 

@@ -40,10 +40,14 @@ class DataLakeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "data"
             database = Path(directory) / "reconciliation.duckdb"
-            sources = (equity_frame(101.0), equity_frame(100.0))
+            sources = {
+                "YAHOO": equity_frame(101.0),
+                "ALPACA": equity_frame(100.0),
+                "MASSIVE": equity_frame(100.5),
+            }
 
             with patch(
-                "reconciliation_engine.batch.fetch_equity_sources",
+                "reconciliation_engine.batch.fetch_partitioned_equity_sources",
                 return_value=sources,
             ) as fetch_sources, patch(
                 "reconciliation_engine.batch.send_run_notification"
@@ -63,6 +67,9 @@ class DataLakeTests(unittest.TestCase):
             )
             self.assertTrue(
                 (root / f"raw/ALPACA/equities/run_id={run_id}/payload.parquet").is_file()
+            )
+            self.assertTrue(
+                (root / f"raw/MASSIVE/equities/run_id={run_id}/payload.parquet").is_file()
             )
             self.assertTrue(
                 (root / f"normalized/YAHOO/equities/run_id={run_id}/data.parquet").is_file()
