@@ -18,6 +18,8 @@ dependencies = [
     "dbt-duckdb",
     "apache-airflow",
     "rich",
+    "fastapi",
+    "uvicorn",
 ]
 
 [tool.uv]

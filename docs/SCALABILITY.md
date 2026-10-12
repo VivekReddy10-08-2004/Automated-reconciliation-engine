@@ -95,11 +95,18 @@ responsibility:
 | Historical reconciliation analytics | DuckDB/dbt | Warehouse or analytical database |
 | Ingestion execution | Bounded thread pool | Queue-backed workers with provider-specific limits |
 | Dashboard | Read-only DuckDB client | Read-only API or warehouse connection |
+| Data exports | Bounded read-only FastAPI service | Stateless API over a replica or warehouse |
 | Real-time scoring | Independent ZeroMQ process | Independently deployed stream consumer |
 
 This separation allows ingestion, reconciliation, exception processing,
 dashboard queries, and real-time scoring to scale independently. Ten ingestion
 workers do not imply ten dashboards or ten databases.
+
+The local REST service uses short-lived read-only DuckDB connections and a
+bounded query semaphore. This limits in-process readers but does not turn
+DuckDB into a multi-host database. Scale API replicas against a published
+snapshot, object-storage tables, or a warehouse rather than the live writable
+file.
 
 ## Capacity guidance
 

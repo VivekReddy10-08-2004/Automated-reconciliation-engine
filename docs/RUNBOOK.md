@@ -24,6 +24,7 @@ On Windows, restrict `project.env` to the account that runs the control. Never p
 | `RECONCILIATION_SYMBOLS` | No | Comma-separated equity universe; defaults to `AAPL` |
 | `RECONCILIATION_SYMBOL_BUCKETS` | No | Stable bucket count; defaults to `64` and should remain fixed after production use |
 | `RECONCILIATION_MAX_WORKERS` | No | Bounded ingestion threads; defaults to `8`, maximum `64` |
+| `RECONCILIATION_EXPORT_API_KEY` | Yes for REST access | Bearer token for every `/api/v1/*` endpoint |
 | `WEBHOOK_URL` | No | Receives `FAILED` and `SUCCESS_WITH_BREAKS` summaries; output is printed if omitted |
 | `REALTIME_ZMQ_ENDPOINT` | No | Raw simulated-tick endpoint; defaults to `tcp://127.0.0.1:5555` |
 | `REALTIME_SCORED_ZMQ_ENDPOINT` | No | Annotated-tick endpoint; defaults to `tcp://127.0.0.1:5556` |
@@ -95,7 +96,27 @@ Build and test the SQL transformation layer:
 dbt build --project-dir dbt --profiles-dir dbt
 ```
 
-## 4. Run the real-time demonstration
+## 4. Serve reconciliation data
+
+Start the read-only API after the batch has completed:
+
+```sh
+python -m reconciliation_engine.api --db reconciliation.duckdb --host 127.0.0.1 --port 8000
+```
+
+Check health without authentication, then access data with the bearer token:
+
+```sh
+curl http://127.0.0.1:8000/health
+curl -H "Authorization: Bearer $RECONCILIATION_EXPORT_API_KEY" \
+  "http://127.0.0.1:8000/api/v1/runs?limit=20"
+```
+
+Use one API worker with local DuckDB. Connections are read-only, short-lived,
+and bounded, but a query overlapping an external writer may receive `503`.
+Detailed endpoint and export examples are in [Read-Only Export API](EXPORT_API.md).
+
+## 5. Run the real-time demonstration
 
 Open three terminals in the repository root. Start the scorer first:
 
@@ -123,7 +144,7 @@ python -m reconciliation_engine.dashboard --db reconciliation.duckdb
 
 Reference captures for both healthy and degraded modes are in [Dashboard demonstrations](DASHBOARD_DEMO.md).
 
-## 5. Run with Docker
+## 6. Run with Docker
 
 Docker packages only the one-shot equity batch. It does not contain Airflow, dbt, the real-time processes, or the dashboard.
 
@@ -141,7 +162,7 @@ docker compose -f orchestration/docker/compose.yaml run --rm \
 
 Do not use `docker compose down -v` unless deleting the persisted audit state is intentional.
 
-## 6. Expected operating scenarios
+## 7. Expected operating scenarios
 
 ### Clean run
 
@@ -170,7 +191,7 @@ Do not use `docker compose down -v` unless deleting the persisted audit state is
 - An unavailable option provider creates a `BREAK` for every contract from the available side, with an explicit missing-provider reason.
 - Futures comparisons require an explicit Yahoo-continuous to Massive-contract mapping; unmapped comparisons are rejected.
 
-## 7. Inspect the audit trail
+## 8. Inspect the audit trail
 
 ### Find recent runs
 
@@ -213,7 +234,7 @@ data/normalized/ALPACA/equities/run_id=<run-id>/data.parquet
 
 The supported local scheduler and log locations are documented in [Scheduling](SCHEDULING.md). Airflow is not included in this release, so there are no Airflow task logs to inspect. If orchestration is added, this section must document the workflow ID, manual trigger command, task-log location, retry behavior, and run-ID lookup before it is presented as runnable.
 
-## 8. Release evidence and safety checks
+## 9. Release evidence and safety checks
 
 Before publishing a revision:
 

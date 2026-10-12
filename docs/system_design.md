@@ -19,6 +19,8 @@ The system is a local Python application with independently runnable batch, real
 8. **Module O (Orchestration, planned):** No Apache Airflow DAG is included yet; Windows Task Scheduler and Ubuntu cron are documented.
 9. **Infrastructure (Docker):** Docker Compose packages only the one-shot batch runner with persistent state.
 10. **Security Control Plane:** Secrets, access roles, encryption, retention, masking, and audit events apply across every module.
+11. **Read-Only Export API:** FastAPI serves authenticated, filtered run,
+    reconciliation, exception, and export views through bounded DuckDB readers.
 
 ---
 
@@ -68,6 +70,18 @@ The persisted equity batch compares all three provider pairs and records provide
 1.  **Batch evidence:** Equity provider payloads, normalized bars, and reconciliation results are archived as Parquet; run, staging, result, and exception rows commit to DuckDB in one transaction or roll back together.
 2.  **Notification:** The batch sends a generic webhook summary only for `FAILED` or `SUCCESS_WITH_BREAKS`; without a webhook it prints the same non-sensitive summary.
 3.  **Current limit:** Real-time ticks and anomaly decisions are not persisted and do not trigger notifications.
+
+### Phase 5: Read-Only Distribution
+
+1. **Authentication:** `/api/v1/*` requests require a bearer token; `/health`
+   remains public for availability probes.
+2. **Queries:** Dashboards and services use paginated, parameterized filters over
+   curated reconciliation tables rather than raw provider payloads.
+3. **Exports:** Filtered result sets can be downloaded as CSV, JSON, or Parquet,
+   subject to an explicit row limit.
+4. **Concurrency:** One local API process uses short-lived read-only DuckDB
+   connections behind a bounded semaphore. Scale-out deployments query a
+   snapshot, transactional store, or warehouse instead of sharing the live file.
 
 ---
 

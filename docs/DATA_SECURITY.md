@@ -15,6 +15,9 @@ output, not only to network encryption.
   owner-only permissions when written.
 - The dashboard connects to DuckDB with `read_only=True` and queries curated run,
   result, and exception tables. It cannot update or resolve exceptions.
+- The export API uses bearer authentication, parameterized filters, bounded
+  result sizes, and short-lived `read_only=True` DuckDB connections. Export
+  events exclude tokens and row contents.
 - Raw market-data staging is excluded from the dashboard to reduce unnecessary
   exposure.
 

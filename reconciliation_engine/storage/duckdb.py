@@ -147,6 +147,8 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
                 source_b_value DOUBLE,
                 difference DOUBLE,
                 is_discrepancy BOOLEAN,
+                status VARCHAR,
+                break_reason VARCHAR,
                 PRIMARY KEY (
                     run_id, symbol, timestamp, metric_name, source_a, source_b
                 )
@@ -154,6 +156,14 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
         """
         )
         _migrate_reconciliation_results(conn)
+        conn.execute(
+            "ALTER TABLE equity_reconciliation_results ADD COLUMN IF NOT EXISTS "
+            "status VARCHAR"
+        )
+        conn.execute(
+            "ALTER TABLE equity_reconciliation_results ADD COLUMN IF NOT EXISTS "
+            "break_reason VARCHAR"
+        )
 
         #create exceptions table
         conn.execute(
@@ -525,9 +535,11 @@ def save_reconciliation_results(
                 source_a_value,
                 source_b_value,
                 difference,
-                is_discrepancy
+                is_discrepancy,
+                status,
+                break_reason
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             results,
         )
@@ -543,6 +555,8 @@ def _reconciliation_rows(df: pd.DataFrame, run_id: str) -> list[tuple]:
         close_b = row["source_b_close"] if is_pairwise else row["alpaca_close"]
         volume_a = row["source_a_volume"] if is_pairwise else row["yahoo_volume"]
         volume_b = row["source_b_volume"] if is_pairwise else row["alpaca_volume"]
+        status = row["status"]
+        break_reason = row.get("break_reason") if is_pairwise else None
         results.extend(
             [
             (
@@ -556,6 +570,8 @@ def _reconciliation_rows(df: pd.DataFrame, run_id: str) -> list[tuple]:
                 close_b,
                 row["close_difference"],
                 row["status"] == "BREAK",
+                status,
+                break_reason,
             ),
             (
                 run_id,
@@ -568,6 +584,8 @@ def _reconciliation_rows(df: pd.DataFrame, run_id: str) -> list[tuple]:
                 volume_b,
                 row["volume_difference"],
                 row["status"] == "BREAK",
+                status,
+                break_reason,
             ),
             ]
         )
@@ -711,8 +729,9 @@ def persist_equity_run(
                     """
                     INSERT INTO equity_reconciliation_results
                     (run_id, symbol, timestamp, metric_name, source_a, source_b,
-                     source_a_value, source_b_value, difference, is_discrepancy)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     source_a_value, source_b_value, difference, is_discrepancy,
+                     status, break_reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     result_rows,
                 )

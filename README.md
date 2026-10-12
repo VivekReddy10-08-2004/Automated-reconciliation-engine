@@ -69,6 +69,7 @@ and results are recorded in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 - Immutable raw and normalized Parquet archives partitioned by source and run ID
 - Deterministic provider/symbol-bucket checkpoints with bounded parallel ingestion
 - Partition metrics, quarantine records, structured events, and exception SLAs
+- Authenticated read-only REST access with filtering, pagination, and exports
 - Read-only DuckDB dashboard for latest breaks and operational analytics
 - Local ZeroMQ publish/subscribe feed with deterministic simulated equity ticks
 - Explainable prior-price anomaly scoring with a separate annotated-tick feed
@@ -158,6 +159,30 @@ data/partitions/<raw|normalized>/control_date=<date>/instrument_type=EQUITY/symb
 See [Scalability and Deployment Model](docs/SCALABILITY.md) for partition
 retries, provider isolation, retention, operational metrics, and the production
 transition from local DuckDB to object storage plus transactional workflow state.
+
+## Read-only REST API
+
+After a reconciliation has been persisted, start the export service:
+
+```sh
+python -m reconciliation_engine.api --db reconciliation.duckdb
+```
+
+The service provides authenticated run history, reconciliation and exception
+filters, and CSV/JSON/Parquet downloads. `/health` is public; all `/api/v1/*`
+routes require `Authorization: Bearer <RECONCILIATION_EXPORT_API_KEY>`.
+
+```text
+GET /api/v1/runs
+GET /api/v1/runs/{run_id}
+GET /api/v1/reconciliations
+GET /api/v1/exceptions
+GET /api/v1/exports?format=csv
+GET /health
+```
+
+See the [Export API guide](docs/EXPORT_API.md) for filters, pagination, download
+examples, authentication, and the DuckDB single-writer operating model.
 
 Run the offline reconciliation tests without API credentials or network access:
 
@@ -300,6 +325,7 @@ weekdays, after the regular US equity-market close.
 - API clients load credentials only when a provider call is made; tests and analytics do not need secrets.
 - DuckDB files are restricted to the current OS user when initialized.
 - The dashboard reads curated reconciliation results and aggregate metrics, not raw credential or payload data.
+- The REST API requires a bearer token and exposes only curated read-only views and bounded exports.
 - If a key may have been exposed, revoke or rotate it at Alpaca or Massive as applicable; changing the local file does not invalidate a copied key.
 
 See [docs/DATA_SECURITY.md](docs/DATA_SECURITY.md) for the threat model and production controls.
@@ -316,6 +342,7 @@ Automated-reconciliation-engine/
 │   ├── notifications.py           # Break and failure notifications
 │   ├── security.py                # Credentials and file permissions
 │   ├── smoke.py                   # Offline release-readiness checks
+│   ├── api/                       # Authenticated read-only FastAPI service
 │   ├── ingestion/                 # Provider adapters and normalization
 │   │   ├── alpaca_equities.py
 │   │   ├── alpaca_options.py
@@ -334,7 +361,9 @@ Automated-reconciliation-engine/
 │   │   └── exceptions.py
 │   ├── storage/                   # Durable local data interfaces
 │   │   ├── duckdb.py
-│   │   └── data_lake.py
+│   │   ├── data_lake.py
+│   │   ├── partitioned_data_lake.py
+│   │   └── retention.py
 │   └── realtime/                  # ZeroMQ publish/subscribe path
 │       ├── anomaly_scorer.py       # Explainable real-time anomaly scoring
 │       ├── publisher.py

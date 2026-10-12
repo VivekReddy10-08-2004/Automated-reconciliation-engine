@@ -63,3 +63,17 @@ def load_massive_api_key(env_path: str | Path = "project.env") -> str:
     if not api_key:
         raise RuntimeError("MASSIVE_API_KEY is not configured")
     return api_key
+
+
+def load_export_api_key(env_path: str | Path = "project.env") -> str:
+    """Load the bearer token protecting the read-only export API."""
+    api_key = os.getenv("RECONCILIATION_EXPORT_API_KEY")
+    if api_key:
+        return api_key
+
+    secret_file = validate_private_file(env_path)
+    load_dotenv(secret_file, override=False)
+    api_key = os.getenv("RECONCILIATION_EXPORT_API_KEY")
+    if not api_key:
+        raise RuntimeError("RECONCILIATION_EXPORT_API_KEY is not configured")
+    return api_key

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from reconciliation_engine.security import (
     load_alpaca_credentials,
+    load_export_api_key,
     load_massive_api_key,
     restrict_file_permissions,
     validate_private_file,
@@ -14,6 +15,16 @@ from reconciliation_engine.security import (
 
 @unittest.skipUnless(os.name == "posix", "POSIX permission test")
 class SecurityTests(unittest.TestCase):
+    @patch.dict(
+        os.environ,
+        {"RECONCILIATION_EXPORT_API_KEY": "runtime-export-token"},
+        clear=True,
+    )
+    def test_export_token_can_come_from_runtime_environment(self):
+        self.assertEqual(
+            load_export_api_key("missing-project.env"), "runtime-export-token"
+        )
+
     @patch.dict(os.environ, {"MASSIVE_API_KEY": "runtime-massive-key"}, clear=True)
     def test_massive_key_can_come_from_runtime_environment(self):
         self.assertEqual(
