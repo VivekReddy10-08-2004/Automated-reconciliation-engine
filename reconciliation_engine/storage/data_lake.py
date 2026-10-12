@@ -158,8 +158,12 @@ def normalize_equity_dataframe(frame: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"Equity data is missing required columns: {missing}")
 
     normalized = frame[EQUITY_COLUMNS].copy()
-    normalized["symbol"] = normalized["symbol"].astype("string")
-    normalized["trade_date"] = pd.to_datetime(normalized["trade_date"]).dt.date
+    normalized["symbol"] = (
+        normalized["symbol"].astype("string").str.strip().str.upper()
+    )
+    normalized["trade_date"] = pd.to_datetime(
+        normalized["trade_date"], errors="coerce", utc=True
+    ).dt.date
     for column in ["open", "high", "low", "close", "volume"]:
         normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
     return normalized
@@ -171,25 +175,50 @@ def archive_equity_source(
     run_id: str,
     *,
     data_root: str | Path = DEFAULT_DATA_ROOT,
+    idempotent: bool = False,
 ) -> pd.DataFrame:
     """Archive raw and canonical snapshots, then return canonical equity data."""
-    write_dataframe(
-        frame,
-        source,
-        EQUITY_INSTRUMENT,
-        run_id,
-        layer="raw",
-        data_root=data_root,
+    raw_path = _archive_path("raw", source, EQUITY_INSTRUMENT, run_id, data_root)
+    if idempotent and raw_path.exists():
+        raw = read_dataframe(
+            source,
+            EQUITY_INSTRUMENT,
+            run_id,
+            layer="raw",
+            data_root=data_root,
+        ).drop(columns="run_id", errors="ignore")
+    else:
+        write_dataframe(
+            frame,
+            source,
+            EQUITY_INSTRUMENT,
+            run_id,
+            layer="raw",
+            data_root=data_root,
+        )
+        raw = frame
+
+    normalized_path = _archive_path(
+        "normalized", source, EQUITY_INSTRUMENT, run_id, data_root
     )
-    normalized = normalize_equity_dataframe(frame)
-    write_dataframe(
-        normalized,
-        source,
-        EQUITY_INSTRUMENT,
-        run_id,
-        layer="normalized",
-        data_root=data_root,
-    )
+    if idempotent and normalized_path.exists():
+        normalized = read_dataframe(
+            source,
+            EQUITY_INSTRUMENT,
+            run_id,
+            layer="normalized",
+            data_root=data_root,
+        ).drop(columns="run_id", errors="ignore")
+    else:
+        normalized = normalize_equity_dataframe(raw)
+        write_dataframe(
+            normalized,
+            source,
+            EQUITY_INSTRUMENT,
+            run_id,
+            layer="normalized",
+            data_root=data_root,
+        )
     return normalized
 
 
@@ -209,13 +238,17 @@ def archive_reconciliation_results(
     run_id: str,
     *,
     data_root: str | Path = DEFAULT_DATA_ROOT,
+    idempotent: bool = False,
 ) -> Path:
     """Archive the derived equity reconciliation result for later audit."""
     missing = [column for column in RECONCILIATION_COLUMNS if column not in frame.columns]
     if missing:
         raise ValueError(f"Reconciliation data is missing required columns: {missing}")
+    path = _reconciliation_path(run_id, data_root)
+    if idempotent and path.exists():
+        return path
     archived = _with_run_id(frame[RECONCILIATION_COLUMNS], run_id)
-    return _write_parquet_once(archived, _reconciliation_path(run_id, data_root))
+    return _write_parquet_once(archived, path)
 
 
 def read_reconciliation_results(

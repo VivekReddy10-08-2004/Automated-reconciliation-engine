@@ -2,6 +2,7 @@
 
 import pandas as pd
 import yfinance as yf
+from datetime import datetime
 
 #The output columns we wanted. 
 EQUITY_COLUMNS = [
@@ -19,9 +20,24 @@ def fetch_equity_bars(
     symbol: str,
     period: str = "5d",
     interval: str = "1h",
+    start: datetime | None = None,
+    end: datetime | None = None,
 ) -> pd.DataFrame:
     """Fetch and normalize historical equity bars from Yahoo Finance."""
-    bars = yf.Ticker(symbol).history(period=period, interval=interval)
+    # Alpaca returns unadjusted exchange bars. Request the same price basis from
+    # Yahoo so corporate-action adjustment policy does not create artificial
+    # reconciliation differences.
+    request = {
+        "interval": interval,
+        "auto_adjust": False,
+        "actions": False,
+    }
+    if start is None and end is None:
+        request["period"] = period
+    else:
+        request["start"] = start
+        request["end"] = end
+    bars = yf.Ticker(symbol).history(**request)
 
     if bars.empty:
         return pd.DataFrame(columns=EQUITY_COLUMNS)

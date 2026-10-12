@@ -36,7 +36,7 @@ def equity_frame(close: float) -> pd.DataFrame:
 
 
 class DataLakeTests(unittest.TestCase):
-    def test_live_command_creates_new_archive_paths_for_each_run(self):
+    def test_retry_reuses_the_completed_logical_run(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "data"
             database = Path(directory) / "reconciliation.duckdb"
@@ -45,39 +45,34 @@ class DataLakeTests(unittest.TestCase):
             with patch(
                 "reconciliation_engine.batch.fetch_equity_sources",
                 return_value=sources,
-            ), patch("reconciliation_engine.batch.send_run_notification"), patch(
+            ) as fetch_sources, patch(
+                "reconciliation_engine.batch.send_run_notification"
+            ), patch(
                 "builtins.print"
             ):
-                first = main(str(database), root)
-                second = main(str(database), root)
+                first = main(str(database), root, control_date="2026-10-09")
+                second = main(str(database), root, control_date="2026-10-09")
 
-            self.assertNotEqual(first["run_id"], second["run_id"])
-            for summary in (first, second):
-                run_id = summary["run_id"]
-                self.assertTrue(
-                    (root / f"raw/YAHOO/equities/run_id={run_id}/payload.parquet").is_file()
-                )
-                self.assertTrue(
-                    (root / f"raw/ALPACA/equities/run_id={run_id}/payload.parquet").is_file()
-                )
-                self.assertTrue(
-                    (
-                        root
-                        / f"normalized/YAHOO/equities/run_id={run_id}/data.parquet"
-                    ).is_file()
-                )
-                self.assertTrue(
-                    (
-                        root
-                        / f"normalized/ALPACA/equities/run_id={run_id}/data.parquet"
-                    ).is_file()
-                )
-                self.assertTrue(
-                    (
-                        root
-                        / f"reconciliation/equities/run_id={run_id}/results.parquet"
-                    ).is_file()
-                )
+            self.assertEqual(first["run_id"], second["run_id"])
+            self.assertFalse(first["already_completed"])
+            self.assertTrue(second["already_completed"])
+            fetch_sources.assert_called_once()
+            run_id = first["run_id"]
+            self.assertTrue(
+                (root / f"raw/YAHOO/equities/run_id={run_id}/payload.parquet").is_file()
+            )
+            self.assertTrue(
+                (root / f"raw/ALPACA/equities/run_id={run_id}/payload.parquet").is_file()
+            )
+            self.assertTrue(
+                (root / f"normalized/YAHOO/equities/run_id={run_id}/data.parquet").is_file()
+            )
+            self.assertTrue(
+                (root / f"normalized/ALPACA/equities/run_id={run_id}/data.parquet").is_file()
+            )
+            self.assertTrue(
+                (root / f"reconciliation/equities/run_id={run_id}/results.parquet").is_file()
+            )
 
     def test_writes_partitioned_file_and_reads_it_without_an_api(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -188,6 +183,26 @@ class DataLakeTests(unittest.TestCase):
                 restored_results.drop(columns="run_id").reset_index(drop=True),
                 check_dtype=False,
             )
+
+    def test_interrupted_retry_reuses_immutable_provider_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = archive_equity_source(
+                equity_frame(101.0),
+                "YAHOO",
+                "stable-run",
+                data_root=directory,
+                idempotent=True,
+            )
+            retry = archive_equity_source(
+                equity_frame(999.0),
+                "YAHOO",
+                "stable-run",
+                data_root=directory,
+                idempotent=True,
+            )
+
+            self.assertEqual(first.iloc[0]["close"], 101.0)
+            self.assertEqual(retry.iloc[0]["close"], 101.0)
 
 
 if __name__ == "__main__":

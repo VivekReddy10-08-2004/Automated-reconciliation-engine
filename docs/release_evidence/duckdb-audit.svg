@@ -9,13 +9,13 @@
   <text x="750" y="30" text-anchor="middle" font-family="monospace" font-size="16" fill="#d7dde8">Task 21 — DuckDB audit evidence</text>
   <g font-family="monospace" font-size="18" fill="#d7dde8">
     <text x="28" y="86" fill="#77d9c5">$ python -c "... query pipeline_runs, staging, and exceptions ..."</text>
-    <text x="28" y="130">run_id                                status                yahoo  alpaca  match  break</text>
-    <text x="28" y="164">929781e9-76bd-4226-8e98-c407a8830acf  SUCCESS_WITH_BREAKS       5       3      1      4</text>
+    <text x="28" y="130">run_id                                status   yahoo  alpaca  match  warn  break</text>
+    <text x="28" y="164">7d6f0211-480e-58fc-a631-a9d0c5ec199d  SUCCESS      5       5      5     0      0</text>
     <text x="28" y="218">staged_rows  symbols</text>
-    <text x="28" y="252">8            1</text>
+    <text x="28" y="252">10           1</text>
     <text x="28" y="306">open_exceptions</text>
-    <text x="28" y="340">4</text>
-    <text x="28" y="406" fill="#8bd49c">Audit checks passed: one run, eight source rows, four linked open exceptions.</text>
-    <text x="28" y="450" fill="#8994a5">Captured 2026-10-11; credentials and provider secrets are not displayed.</text>
+    <text x="28" y="340">0</text>
+    <text x="28" y="406" fill="#8bd49c">Audit checks passed: five aligned dates, ten source rows, no duplicate retry writes.</text>
+    <text x="28" y="450" fill="#8994a5">Captured 2026-10-12; credentials and provider secrets are not displayed.</text>
   </g>
 </svg>

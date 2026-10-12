@@ -25,7 +25,7 @@ python -m reconciliation_engine.batch --symbol AAPL
 
 The command fetches both providers, reconciles their observations, stores one
 auditable `run_id`, and creates exceptions for breaks. This verified example
-produced one match and four breaks:
+aligned five market dates and produced five matches with no breaks:
 
 ![DuckDB audit evidence showing the stored run, staging rows, and open exceptions](docs/release_evidence/duckdb-audit.svg)
 
@@ -62,13 +62,27 @@ and results are recorded in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 - Equity reconciliation report with Yahoo/Alpaca close and volume differences
 - Versioned dbt models for typed staging, provider pairing, and reconciliation facts
 - Offline-tested Yahoo/Alpaca option reconciliation by full contract identity
-- `MATCH` / `BREAK` status using a configurable close-price tolerance
+- `MATCH` / `WARN` / `BREAK` status using explicit close-price tolerances
 - Immutable raw and normalized Parquet archives partitioned by source and run ID
 - Read-only DuckDB dashboard for latest breaks and operational analytics
 - Local ZeroMQ publish/subscribe feed with deterministic simulated equity ticks
 - Explainable prior-price anomaly scoring with a separate annotated-tick feed
 - Non-root Docker Compose batch runner with persistent DuckDB and Parquet state
 - Private local secret/database permissions and lazy credential loading
+
+## Control Guarantees
+
+| Concern | Product behavior |
+| --- | --- |
+| Missing provider observations | Equity and option comparisons use full outer joins. A one-sided observation is retained as a `BREAK`; option results include `MISSING_YAHOO_CONTRACT` or `MISSING_ALPACA_CONTRACT`. |
+| Provider alignment | Both feeds use the same explicit date window; Yahoo requests unadjusted prices to match Alpaca's raw IEX bars. Symbols and dates are normalized, and Python/dbt share hybrid limits: warning above the greater of `$0.01` or `0.10%`, break above the greater of `$0.05` or `0.50%`. |
+| Data validation | Equity inputs reject missing columns, nulls, non-numeric OHLCV values, non-finite or negative values, fractional volume, duplicate `symbol/trade_date` keys, and inconsistent OHLC ranges. Column order and unrelated provider fields do not matter. |
+| Safe retries | The control date, sorted symbol universe, and rule version produce a deterministic run ID. A completed retry performs no provider calls or writes. DuckDB commits the run, stages, results, and exceptions in one transaction; interrupted Parquet writes are immutable and resumable. |
+
+Provider alignment does not imply identical prices. IEX versus broader-market
+coverage, quote timing, and vendor policies can create legitimate differences;
+the warning band keeps small differences visible without treating all of them
+as critical breaks.
 
 ## Run
 
@@ -93,6 +107,14 @@ The command compares recent daily bars for the comma-separated symbols in
 `RECONCILIATION_SYMBOLS` (default: `AAPL`), saves the audit trail to DuckDB, and
 archives Yahoo, Alpaca, and reconciliation data under `data/`. Each archive
 contains its `run_id` and an existing run file is never overwritten.
+
+One logical run is allowed for each US-market control date, symbol universe,
+and rule version. Retrying that combination returns the stored result without
+calling either provider again. Use `--control-date` for a reproducible backfill:
+
+```powershell
+python -m reconciliation_engine.batch --symbol AAPL --control-date 2026-10-09
+```
 
 Override the configured universe for one run with one or more `--symbol`
 arguments:
@@ -139,8 +161,9 @@ dbt build --project-dir dbt --profiles-dir dbt
 
 Set `RECONCILIATION_DB_PATH` to target another DuckDB file. A successful build
 creates the queryable `main.fct_equity_reconciliation` table with `MATCH`,
-`WARN`, and `BREAK` outcomes. Absolute close differences above `0.01` warn;
-differences above `0.05`, or missing closes, break.
+`WARN`, and `BREAK` outcomes. Close differences warn above the greater of
+`$0.01` or `0.10%`; they break above the greater of `$0.05` or `0.50%`.
+Missing closes always break.
 
 ## Run with Docker Compose
 
@@ -321,7 +344,7 @@ rules used throughout the project.
 
 Comparable Alpaca option contracts may be unavailable because of account entitlements, subscription level, contract expiration, or provider coverage. The project does not replace missing Alpaca observations with Yahoo values or synthetic prices and does not report an unavailable comparison as a `MATCH`.
 
-When either provider returns no option contracts, the reconciliation function returns an empty DataFrame with the documented output schema. A calling report should describe the live comparison as unavailable. Offline fixtures with small Yahoo and Alpaca DataFrames prove the `MATCH` and `BREAK` rules independently of vendor access.
+When one provider returns no option contracts, every contract from the available provider is retained as a `BREAK` with an explicit missing-provider reason. Only a comparison where both providers are empty returns an empty result. Offline fixtures prove matched, price-break, missing-contract, snapshot-date, and duplicate-contract behavior independently of vendor access.
 
 ## Planned Next Steps
 

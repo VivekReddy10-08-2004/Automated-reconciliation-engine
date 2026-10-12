@@ -76,16 +76,48 @@ class OptionReconciliationTests(unittest.TestCase):
 
         result = reconcile_option_chain(self.yahoo.iloc[[0]], alpaca_put)
 
-        self.assertTrue(result.empty)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(set(result["status"]), {"BREAK"})
+        self.assertEqual(
+            set(result["break_reason"]),
+            {"MISSING_ALPACA_CONTRACT", "MISSING_YAHOO_CONTRACT"},
+        )
         self.assertEqual(result.columns.tolist(), OUTPUT_COLUMNS)
 
-    def test_unavailable_provider_returns_empty_result(self):
+    def test_unavailable_provider_flags_every_one_sided_contract(self):
         unavailable_alpaca = pd.DataFrame(columns=OPTION_COLUMNS)
 
         result = reconcile_option_chain(self.yahoo, unavailable_alpaca)
 
-        self.assertTrue(result.empty)
+        self.assertEqual(len(result), len(self.yahoo))
+        self.assertEqual(set(result["status"]), {"BREAK"})
+        self.assertEqual(set(result["break_reason"]), {"MISSING_ALPACA_CONTRACT"})
         self.assertEqual(result.columns.tolist(), OUTPUT_COLUMNS)
+
+    def test_alpaca_only_contract_keeps_its_contract_symbol(self):
+        alpaca_only = self.alpaca.iloc[[0]].copy()
+        result = reconcile_option_chain(
+            pd.DataFrame(columns=OPTION_COLUMNS),
+            alpaca_only,
+        )
+
+        self.assertEqual(result.iloc[0]["contract_symbol"], "SPY261218C00500000")
+        self.assertEqual(result.iloc[0]["break_reason"], "MISSING_YAHOO_CONTRACT")
+
+    def test_duplicate_contract_key_is_rejected(self):
+        duplicated = pd.concat([self.yahoo.iloc[[0]], self.yahoo.iloc[[0]]])
+
+        with self.assertRaisesRegex(ValueError, "duplicate contract keys"):
+            reconcile_option_chain(duplicated, self.alpaca)
+
+    def test_different_snapshot_dates_are_flagged_as_one_sided_contracts(self):
+        alpaca = self.alpaca.iloc[[0]].copy()
+        alpaca["trade_date"] = "2026-10-06"
+
+        result = reconcile_option_chain(self.yahoo.iloc[[0]], alpaca)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(set(result["status"]), {"BREAK"})
 
 
 if __name__ == "__main__":

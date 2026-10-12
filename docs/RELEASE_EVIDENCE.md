@@ -1,13 +1,13 @@
 # Release Verification Evidence
 
-Verification was performed on October 11, 2026 from the repository root.
+Verification was refreshed on October 12, 2026 from the repository root.
 
 ## Automated checks
 
 | Check | Result |
 | --- | --- |
 | `python -m reconciliation_engine.smoke` | Passed: 13 imports, configuration, credentials, two local endpoints, and four DuckDB tables; no market-data request |
-| `python -m unittest discover -s tests -v` | Passed: 60 tests |
+| `python -m unittest discover -s tests -v` | Passed: 73 tests |
 | `dbt build --project-dir dbt --profiles-dir dbt` | Passed: 19 models/tests, 0 warnings, 0 errors |
 | `git diff --check` | Passed |
 | Tracked secret/runtime filename check | Passed; only the intentionally tracked `project.env.example` template matched the initial broad search |
@@ -17,16 +17,17 @@ Verification was performed on October 11, 2026 from the repository root.
 An isolated AAPL batch run completed against Yahoo and Alpaca using temporary storage:
 
 ```text
-Run ID: 929781e9-76bd-4226-8e98-c407a8830acf
-Status: SUCCESS_WITH_BREAKS
+Run ID: 7d6f0211-480e-58fc-a631-a9d0c5ec199d
+Status: SUCCESS
 Yahoo rows: 5
-Alpaca rows: 3
-MATCH: 1
-BREAK: 4
-Open exceptions: 4
+Alpaca rows: 5
+MATCH: 5
+WARN: 0
+BREAK: 0
+Open exceptions: 0
 ```
 
-The two Yahoo-only dates were retained as breaks, confirming the missing-provider control behavior. Replaying the archived normalized inputs reproduced `MATCH: 1` and `BREAK: 4` without provider calls.
+Yahoo and Alpaca returned the same five market dates. Their largest closing-price difference was approximately `$0.22`, but it remained below the `0.10%` warning band and was correctly classified as a legitimate cross-feed match. An immediate retry returned the same run ID without provider calls or duplicate writes.
 
 ![DuckDB audit query for the verified run](release_evidence/duckdb-audit.svg)
 

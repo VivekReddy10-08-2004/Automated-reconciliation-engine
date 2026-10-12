@@ -24,29 +24,81 @@ class BatchFailureHandlingTests(unittest.TestCase):
                 with patch.multiple(
                     batch,
                     initialize_database=DEFAULT,
+                    get_pipeline_run=DEFAULT,
                     fetch_equity_sources=DEFAULT,
                     archive_equity_source=DEFAULT,
                     reconcile_equity_bars=DEFAULT,
                     archive_reconciliation_results=DEFAULT,
-                    save_pipeline_run=DEFAULT,
-                    save_equity_bars=DEFAULT,
-                    save_reconciliation_results=DEFAULT,
+                    persist_equity_run=DEFAULT,
                     create_equity_exceptions=DEFAULT,
-                    save_exceptions=DEFAULT,
                     send_run_notification=DEFAULT,
                 ) as mocks, patch("builtins.print"):
                     mocks["fetch_equity_sources"].return_value = (source, source)
                     mocks["archive_equity_source"].side_effect = [source, source]
                     mocks["reconcile_equity_bars"].return_value = result
                     mocks["create_equity_exceptions"].return_value = pd.DataFrame()
+                    mocks["get_pipeline_run"].return_value = None
+                    mocks["persist_equity_run"].return_value = True
 
-                    summary = batch.main("test.duckdb")
+                    summary = batch.main(
+                        "test.duckdb",
+                        control_date="2026-10-09",
+                    )
 
                 self.assertEqual(summary["status"], expected_status)
                 self.assertEqual(summary["break_count"], expected_breaks)
                 self.assertEqual(summary["symbols"], ["AAPL"])
-                mocks["fetch_equity_sources"].assert_called_once_with(("AAPL",))
+                self.assertFalse(summary["already_completed"])
+                mocks["fetch_equity_sources"].assert_called_once_with(
+                    ("AAPL",),
+                    batch.get_control_date("2026-10-09"),
+                )
+                mocks["reconcile_equity_bars"].assert_called_once_with(
+                    source,
+                    source,
+                    close_tolerance=batch.DEFAULT_BREAK_TOLERANCE,
+                    warn_tolerance=batch.DEFAULT_WARN_TOLERANCE,
+                    break_pct_tolerance=batch.DEFAULT_BREAK_PCT_TOLERANCE,
+                    warn_pct_tolerance=batch.DEFAULT_WARN_PCT_TOLERANCE,
+                )
                 mocks["send_run_notification"].assert_called_once_with(summary)
+
+    @patch("reconciliation_engine.batch.send_run_notification")
+    @patch("reconciliation_engine.batch.fetch_equity_sources")
+    @patch("reconciliation_engine.batch.get_pipeline_run")
+    @patch("reconciliation_engine.batch.initialize_database")
+    def test_completed_logical_run_is_not_fetched_or_written_again(
+        self,
+        initialize_database,
+        get_pipeline_run,
+        fetch_equity_sources,
+        send_run_notification,
+    ):
+        get_pipeline_run.return_value = {
+            "run_id": batch.build_run_id(("AAPL",), "2026-10-09"),
+            "status": "SUCCESS_WITH_BREAKS",
+            "yahoo_row_count": 5,
+            "alpaca_row_count": 3,
+            "match_count": 1,
+            "break_count": 4,
+        }
+
+        with patch("builtins.print"):
+            summary = batch.main(
+                "test.duckdb",
+                symbols=["AAPL"],
+                control_date="2026-10-09",
+            )
+
+        self.assertTrue(summary["already_completed"])
+        fetch_equity_sources.assert_not_called()
+        send_run_notification.assert_not_called()
+
+    def test_run_id_is_stable_for_equivalent_universes(self):
+        first = batch.build_run_id(("MSFT", "AAPL"), "2026-10-09")
+        second = batch.build_run_id(("aapl", "msft"), "2026-10-09")
+
+        self.assertEqual(first, second)
 
     @patch("reconciliation_engine.batch.send_run_notification")
     @patch("reconciliation_engine.batch.initialize_database")
@@ -117,15 +169,28 @@ class BatchSymbolConfigurationTests(unittest.TestCase):
         fetch_yahoo_bars.side_effect = provider_frame
         fetch_stock_bars.side_effect = provider_frame
 
-        yahoo, alpaca = batch.fetch_equity_sources(["MSFT", "NVDA"])
+        yahoo, alpaca = batch.fetch_equity_sources(
+            ["MSFT", "NVDA"],
+            "2026-10-09",
+        )
 
         self.assertEqual(yahoo["symbol"].tolist(), ["MSFT", "NVDA"])
         self.assertEqual(alpaca["symbol"].tolist(), ["MSFT", "NVDA"])
         self.assertEqual(
             fetch_yahoo_bars.call_args_list,
             [
-                call("MSFT", period="5d", interval="1d"),
-                call("NVDA", period="5d", interval="1d"),
+                call(
+                    "MSFT",
+                    start=batch.datetime(2026, 9, 30, tzinfo=batch.timezone.utc),
+                    end=batch.datetime(2026, 10, 10, tzinfo=batch.timezone.utc),
+                    interval="1d",
+                ),
+                call(
+                    "NVDA",
+                    start=batch.datetime(2026, 9, 30, tzinfo=batch.timezone.utc),
+                    end=batch.datetime(2026, 10, 10, tzinfo=batch.timezone.utc),
+                    interval="1d",
+                ),
             ],
         )
         self.assertEqual(

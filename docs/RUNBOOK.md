@@ -61,7 +61,15 @@ Override it for one run:
 python -m reconciliation_engine.batch --symbol AAPL --symbol MSFT --symbol NVDA
 ```
 
-The command prints a UUID `run_id`. It stores the run, staging rows, reconciliation results, and exceptions in `reconciliation.duckdb`, and writes immutable Parquet evidence beneath `data/`.
+The command prints a deterministic UUID `run_id`. The ID is derived from the US-market control date, sorted symbol universe, and reconciliation-rule version. It stores the run, staging rows, reconciliation results, and exceptions in `reconciliation.duckdb`, and writes immutable Parquet evidence beneath `data/`.
+
+Retry the same logical run safely, or specify the date explicitly for a backfill:
+
+```sh
+python -m reconciliation_engine.batch --symbol AAPL --control-date 2026-10-09
+```
+
+If that date/universe/version is already complete, the command returns its stored summary without provider calls, writes, or duplicate notifications. If an earlier attempt stopped after writing only part of the Parquet archive, the retry reuses the immutable files and finishes the missing work.
 
 Replay saved provider inputs without network access or credentials:
 
@@ -128,8 +136,8 @@ Do not use `docker compose down -v` unless deleting the persisted audit state is
 ### Clean run
 
 - The command exits with code `0` and reports `SUCCESS`.
-- Reconciled observations are `MATCH` in the Python control. dbt can additionally classify a `WARN` using its lower warning threshold.
-- A `pipeline_runs` row and matching DuckDB/Parquet evidence are created.
+- Reconciled observations are `MATCH` in the Python control. Both Python and dbt classify a `WARN` above the greater of `$0.01` or `0.10%`, and a `BREAK` above the greater of `$0.05` or `0.50%`.
+- One `pipeline_runs` row and matching DuckDB/Parquet evidence are created atomically for the logical run.
 - No webhook notification is sent.
 
 ### Reconciliation break
@@ -143,12 +151,12 @@ Do not use `docker compose down -v` unless deleting the persisted audit state is
 
 - The command exits nonzero and emits one `FAILED` summary notification.
 - No credentials or webhook URL should appear in output.
-- Check provider availability, Alpaca entitlement, credentials, network access, and the process log, then rerun. A failure before successful persistence does not currently create a `pipeline_runs` row; the scheduler log and notification are the failure evidence for this local release.
+- Check provider availability, Alpaca entitlement, credentials, network access, and the process log, then rerun. DuckDB persistence is transactional, so a database write failure leaves no partial run, staging, result, or exception rows. A failure before successful persistence does not create a `pipeline_runs` row; the scheduler log and notification are the failure evidence for this local release.
 
 ### Missing market observation or mark
 
 - A Yahoo-only or Alpaca-only equity observation is retained and classified as `BREAK`, with the absent provider values stored as null.
-- An entirely unavailable option provider produces an empty comparison rather than a false match; the caller must report the comparison as unavailable.
+- An unavailable option provider creates a `BREAK` for every contract from the available side, with an explicit missing-provider reason. Only two empty inputs produce an empty comparison.
 - Futures quality reports and swap/forward `NO_MARK` outcomes belong to the planned Task 10 control layer and are not exposed by the current batch command.
 
 ## 7. Inspect the audit trail

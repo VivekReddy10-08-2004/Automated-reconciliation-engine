@@ -24,7 +24,7 @@ The system is a local Python application with independently runnable batch, real
 
 ## 2. Data Sources
 The current integrations are:
-*   **Source A (Baseline):** `yfinance` (Yahoo Finance) for end-of-day equity prices and **options chains** (`Ticker.option_chain()` exposes calls/puts with strike, expiry, bid/ask, implied volatility, open interest).
+*   **Source A (Baseline):** `yfinance` (Yahoo Finance) for unadjusted end-of-day equity prices and **options chains** (`Ticker.option_chain()` exposes calls/puts with strike, expiry, bid/ask, implied volatility, open interest).
 *   **Source B (Cross-Reference):** Alpaca REST API for historical equities (`StockHistoricalDataClient`) and option snapshots (`OptionHistoricalDataClient` / `OptionChainRequest`). Equity batch requests explicitly use IEX; option coverage depends on account entitlement.
 *   **Real-time demo input:** deterministic simulated equity ticks. No Alpaca WebSocket is connected in this release.
 
@@ -38,7 +38,7 @@ The current integrations are:
 | Swaps (`reconciliation_engine/ingestion/swaps.py`) | Synthetic blotter + yfinance yields (`^IRX`, `^TNX`) | OTC: no public feed. Internal book marked vs a free reference rate. |
 | Forwards (`reconciliation_engine/ingestion/forwards.py`) | Synthetic blotter + yfinance FX spot | OTC: booked forward marked vs a covered-interest-parity forward derived from live spot. |
 
-Only equities currently flow through the persisted batch pipeline. Options have offline-tested ingestion and reconciliation functions. Futures, swaps, and forwards have ingestion adapters, while their unified Task 10 control reports remain planned. See [Data Sources](../DATA_SOURCES.md) for exact provenance and limitations.
+Only equities currently flow through the persisted batch pipeline. Options have offline-tested ingestion and full-outer reconciliation functions that retain one-sided contracts with explicit missing-provider reasons. Futures, swaps, and forwards have ingestion adapters, while their unified control reports remain planned. See [Data Sources](../DATA_SOURCES.md) for exact provenance and limitations.
 
 ---
 
@@ -58,15 +58,16 @@ Only equities currently flow through the persisted batch pipeline. Options have 
 
 ### Phase 3: Historical Batch Ingestion & Reconciliation (Data Engineering Workflow)
 *(This process is run manually or by the documented local OS scheduler. Airflow is planned.)*
-1.  **Batch Fetch:** The Ingestion Engine requests, from both Source A (Yahoo) and Source B (Alpaca):
+1.  **Idempotency Check:** A deterministic run ID is derived from the control date, sorted universe, and rule version. A completed retry returns without provider calls or writes.
+2.  **Batch Fetch:** The Ingestion Engine requests, from both Source A (Yahoo) and Source B (Alpaca):
     *   recent daily OHLCV bars for each configured equity.
-2.  **Parquet Storage (Data Lake):** All payloads are saved as `.parquet` files (partitioned by instrument type) instead of being loaded directly into memory or a transactional DB.
-3.  **dbt Transformation:** A `dbt` project runs against **DuckDB**. It reads the Parquet files as sources.
-4.  **The Auditor SQL Models:** The current dbt project joins equity sources on `(run_id, symbol, trade_date)` and calculates close and volume differences.
-5.  **Break Detection:** dbt classifies equity rows as `MATCH`, `WARN`, or `BREAK`. One-sided provider observations are retained and break.
+3.  **Parquet Storage (Data Lake):** Payloads are saved once as immutable `.parquet` files partitioned by run ID. An interrupted retry reuses completed partitions.
+4.  **Validation and Alignment:** Symbols and dates are normalized; duplicate keys, nulls, invalid types, negative values, and inconsistent OHLC ranges are rejected.
+5.  **dbt Transformation:** A `dbt` project runs against **DuckDB** and joins equity sources on `(run_id, symbol, trade_date)`.
+6.  **Break Detection:** Python and dbt classify equity rows as `MATCH`, `WARN`, or `BREAK` using the same thresholds. One-sided provider observations are retained and break.
 
 ### Phase 4: Storage & Alerting
-1.  **Batch evidence:** Equity provider payloads, normalized bars, and reconciliation results are archived as Parquet; run, staging, result, and exception rows are stored in DuckDB.
+1.  **Batch evidence:** Equity provider payloads, normalized bars, and reconciliation results are archived as Parquet; run, staging, result, and exception rows commit to DuckDB in one transaction or roll back together.
 2.  **Notification:** The batch sends a generic webhook summary only for `FAILED` or `SUCCESS_WITH_BREAKS`; without a webhook it prints the same non-sensitive summary.
 3.  **Current limit:** Real-time ticks and anomaly decisions are not persisted and do not trigger notifications.
 

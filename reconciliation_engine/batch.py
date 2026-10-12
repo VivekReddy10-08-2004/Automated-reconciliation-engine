@@ -1,10 +1,11 @@
 import argparse
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import os
 from pathlib import Path
 import re
 from collections.abc import Iterable
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -26,17 +27,22 @@ from reconciliation_engine.ingestion.yahoo_equities import (
 from reconciliation_engine.reconciliation.equities import reconcile_equity_bars
 from reconciliation_engine.notifications import send_run_notification
 from reconciliation_engine.storage.duckdb import (
+    get_pipeline_run,
     initialize_database,
-    save_equity_bars,
-    save_exceptions,
-    save_pipeline_run,
-    save_reconciliation_results,
+    persist_equity_run,
 )
 
 
 SYMBOLS_ENV = "RECONCILIATION_SYMBOLS"
 DEFAULT_RECONCILIATION_SYMBOLS = ("AAPL",)
 SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
+RUN_DEFINITION_VERSION = "equity-daily-v3"
+DEFAULT_WARN_TOLERANCE = 0.01
+DEFAULT_BREAK_TOLERANCE = 0.05
+DEFAULT_WARN_PCT_TOLERANCE = 0.001
+DEFAULT_BREAK_PCT_TOLERANCE = 0.005
+EQUITY_LOOKBACK_CALENDAR_DAYS = 10
+MARKET_TIMEZONE = ZoneInfo("America/New_York")
 
 
 def normalize_symbols(values: Iterable[str]) -> tuple[str, ...]:
@@ -75,16 +81,41 @@ def get_reconciliation_symbols(
     return normalize_symbols([environment_value])
 
 
+def get_control_date(value: date | str | None = None) -> date:
+    """Return the logical US-market date used to make retries deterministic."""
+    if value is None:
+        return datetime.now(MARKET_TIMEZONE).date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(value)
+
+
+def build_run_id(symbols: Iterable[str], control_date: date | str) -> str:
+    """Build one stable run ID per control date, universe, and rule version."""
+    selected_symbols = tuple(sorted(normalize_symbols(symbols)))
+    logical_key = (
+        f"{RUN_DEFINITION_VERSION}|{get_control_date(control_date).isoformat()}|"
+        f"{','.join(selected_symbols)}"
+    )
+    return str(uuid5(NAMESPACE_URL, logical_key))
+
+
 def fetch_equity_sources(
     symbols: Iterable[str] = DEFAULT_RECONCILIATION_SYMBOLS,
+    control_date: date | str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Fetch the two provider datasets used by the daily equity control."""
     selected_symbols = normalize_symbols(symbols)
-    start = datetime.now(timezone.utc) - timedelta(days=5)
-    end = datetime.now(timezone.utc)
+    effective_control_date = get_control_date(control_date)
+    end = datetime.combine(
+        effective_control_date + timedelta(days=1),
+        datetime.min.time(),
+        tzinfo=timezone.utc,
+    )
+    start = end - timedelta(days=EQUITY_LOOKBACK_CALENDAR_DAYS)
 
     yahoo_frames = [
-        fetch_yahoo_bars(symbol, period="5d", interval="1d")
+        fetch_yahoo_bars(symbol, start=start, end=end, interval="1d")
         for symbol in selected_symbols
     ]
     alpaca_frames = [
@@ -144,78 +175,99 @@ def main(
     db_path: str = "reconciliation.duckdb",
     data_root: str | Path = "data",
     symbols: Iterable[str] | None = None,
+    control_date: date | str | None = None,
 ) -> dict:
     selected_symbols = get_reconciliation_symbols(symbols)
-    run_id = str(uuid4())
+    effective_control_date = get_control_date(control_date)
+    run_id = build_run_id(selected_symbols, effective_control_date)
     started_at = datetime.now(timezone.utc).isoformat()
     break_count = 0
 
     try:
         initialize_database(db_path)
-        yahoo_raw, alpaca_raw = fetch_equity_sources(selected_symbols)
+        existing_run = get_pipeline_run(run_id, db_path)
+        if existing_run is not None:
+            summary = {
+                "run_id": run_id,
+                "status": existing_run["status"],
+                "break_count": existing_run["break_count"],
+                "symbols": list(selected_symbols),
+                "control_date": effective_control_date.isoformat(),
+                "already_completed": True,
+            }
+            print(
+                f"Run ID: {run_id} | Status: {existing_run['status']} | "
+                "Already completed; no provider calls or writes performed"
+            )
+            return summary
+
+        yahoo_raw, alpaca_raw = fetch_equity_sources(
+            selected_symbols,
+            effective_control_date,
+        )
 
         yahoo_bars = archive_equity_source(
             yahoo_raw,
             "YAHOO",
             run_id,
             data_root=data_root,
+            idempotent=True,
         )
         alpaca_bars = archive_equity_source(
             alpaca_raw,
             "ALPACA",
             run_id,
             data_root=data_root,
+            idempotent=True,
         )
 
-        reconciliation_df = reconcile_equity_bars(yahoo_bars, alpaca_bars)
+        reconciliation_df = reconcile_equity_bars(
+            yahoo_bars,
+            alpaca_bars,
+            close_tolerance=DEFAULT_BREAK_TOLERANCE,
+            warn_tolerance=DEFAULT_WARN_TOLERANCE,
+            break_pct_tolerance=DEFAULT_BREAK_PCT_TOLERANCE,
+            warn_pct_tolerance=DEFAULT_WARN_PCT_TOLERANCE,
+        )
         archive_reconciliation_results(
             reconciliation_df,
             run_id,
             data_root=data_root,
+            idempotent=True,
         )
         match_count = len(reconciliation_df[reconciliation_df["status"] == "MATCH"])
+        warn_count = len(reconciliation_df[reconciliation_df["status"] == "WARN"])
         break_count = len(reconciliation_df[reconciliation_df["status"] == "BREAK"])
         finished_at = datetime.now(timezone.utc).isoformat()
         run_status = "SUCCESS" if break_count == 0 else "SUCCESS_WITH_BREAKS"
         largest_difference = reconciliation_df["close_difference"].abs().max()
 
-        save_pipeline_run(
+        exceptions_df = create_equity_exceptions(reconciliation_df, run_id)
+        persisted = persist_equity_run(
             run_id=run_id,
             started_at=started_at,
             finished_at=finished_at,
             status=run_status,
-            yahoo_row_count=len(yahoo_bars),
-            alpaca_row_count=len(alpaca_bars),
-            match_count=match_count,
-            break_count=break_count,
+            yahoo_bars=yahoo_bars,
+            alpaca_bars=alpaca_bars,
+            reconciliation=reconciliation_df,
+            exceptions=exceptions_df,
             db_path=db_path,
         )
-        save_equity_bars(
-            yahoo_bars,
-            source="YAHOO",
-            run_id=run_id,
-            db_path=db_path,
-        )
-        save_equity_bars(
-            alpaca_bars,
-            source="ALPACA",
-            run_id=run_id,
-            db_path=db_path,
-        )
-        save_reconciliation_results(
-            reconciliation_df,
-            run_id=run_id,
-            db_path=db_path,
-        )
-
-        exceptions_df = create_equity_exceptions(reconciliation_df, run_id)
-        save_exceptions(exceptions_df, db_path=db_path)
+        if not persisted:
+            existing_run = get_pipeline_run(run_id, db_path)
+            if existing_run is None:
+                raise RuntimeError("Run persistence lost an idempotency race")
+            run_status = str(existing_run["status"])
+            break_count = int(existing_run["break_count"])
 
         summary = {
             "run_id": run_id,
             "status": run_status,
             "break_count": break_count,
             "symbols": list(selected_symbols),
+            "control_date": effective_control_date.isoformat(),
+            "already_completed": not persisted,
         }
 
         print(
@@ -224,6 +276,7 @@ def main(
             f"Yahoo rows: {len(yahoo_bars)} | "
             f"Alpaca rows: {len(alpaca_bars)} | "
             f"MATCH: {match_count} | "
+            f"WARN: {warn_count} | "
             f"BREAK: {break_count} | "
             f"Largest difference: {largest_difference}"
         )
@@ -238,6 +291,7 @@ def main(
             "status": "FAILED",
             "break_count": break_count,
             "symbols": list(selected_symbols),
+            "control_date": effective_control_date.isoformat(),
         }
         send_run_notification(failed_summary)
         raise
@@ -265,6 +319,13 @@ if __name__ == "__main__":
         "--replay-run-id",
         help="Recompute a report from normalized Parquet files without API calls",
     )
+    parser.add_argument(
+        "--control-date",
+        help=(
+            "Logical market date in YYYY-MM-DD form. Retries with the same date "
+            "and symbol universe reuse the same run ID."
+        ),
+    )
     arguments = parser.parse_args()
 
     if arguments.replay_run_id:
@@ -276,4 +337,9 @@ if __name__ == "__main__":
             f"BREAK: {(replay['status'] == 'BREAK').sum()}"
         )
     else:
-        main(arguments.db, arguments.data_root, arguments.symbols)
+        main(
+            arguments.db,
+            arguments.data_root,
+            arguments.symbols,
+            arguments.control_date,
+        )

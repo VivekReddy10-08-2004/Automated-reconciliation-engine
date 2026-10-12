@@ -32,7 +32,12 @@ def create_equity_exceptions(
     exception_records = []
     for break_row in breaks.itertuples(index=False):
         exception_records.append({
-            "exception_id": str(uuid.uuid4()),
+            "exception_id": str(
+                uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"{run_id}|EQUITY|{break_row.symbol}|{break_row.trade_date}",
+                )
+            ),
             "run_id": run_id,
             "instrument_type": "EQUITY",
             "symbol": break_row.symbol,

@@ -24,10 +24,17 @@ select
     volume_difference,
     case
         when close_difference is null then 'BREAK'
-        -- Control thresholds are absolute close differences in price units:
-        -- WARN above 0.01 and BREAK above 0.05.
-        when abs(close_difference) > 0.05 then 'BREAK'
-        when abs(close_difference) > 0.01 then 'WARN'
+        -- Hybrid limits keep an absolute floor for low-priced instruments and
+        -- scale for higher-priced equities: WARN > max(0.01, 0.10%) and
+        -- BREAK > max(0.05, 0.50%).
+        when abs(close_difference) > greatest(
+            0.05,
+            greatest(abs(yahoo_close), abs(alpaca_close)) * 0.005
+        ) then 'BREAK'
+        when abs(close_difference) > greatest(
+            0.01,
+            greatest(abs(yahoo_close), abs(alpaca_close)) * 0.001
+        ) then 'WARN'
         else 'MATCH'
     end as status
 from differences

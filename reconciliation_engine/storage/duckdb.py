@@ -160,7 +160,19 @@ def save_equity_bars(
     run_id: str,
     db_path: str = "reconciliation.duckdb"
 ) -> None:
+    rows = _equity_bar_rows(df, source, run_id)
+    with duckdb.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO equity_bars_staging
+            (symbol, run_id, source, timestamp, open, high, low, close, volume)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
 
+
+def _equity_bar_rows(df: pd.DataFrame, source: str, run_id: str) -> list[tuple]:
     columns = [
         "symbol",
         "trade_date",
@@ -195,15 +207,7 @@ def save_equity_bars(
         ]
     ]
 
-    with duckdb.connect(db_path) as conn:
-        conn.executemany(
-            """
-            INSERT INTO equity_bars_staging
-            (symbol, run_id, source, timestamp, open, high, low, close, volume)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            selected_df.values.tolist()
-        )
+    return [tuple(row) for row in selected_df.itertuples(index=False, name=None)]
 
     
 def save_reconciliation_results(
@@ -211,11 +215,32 @@ def save_reconciliation_results(
     run_id: str,
     db_path: str = "reconciliation.duckdb"
 ) -> None:
+    results = _reconciliation_rows(df, run_id)
+    with duckdb.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO equity_reconciliation_results
+            (
+                run_id,
+                symbol,
+                timestamp,
+                metric_name,
+                source_a_value,
+                source_b_value,
+                difference,
+                is_discrepancy
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            results,
+        )
 
-    results = []
 
+def _reconciliation_rows(df: pd.DataFrame, run_id: str) -> list[tuple]:
+    results: list[tuple] = []
     for _, row in df.iterrows():
-        results.extend([
+        results.extend(
+            [
             (
                 run_id,
                 row["symbol"],
@@ -236,27 +261,14 @@ def save_reconciliation_results(
                 row["volume_difference"],
                 row["status"] == "BREAK",
             ),
-        ])
-    with duckdb.connect(db_path) as conn:
-        conn.executemany(
-            """
-            INSERT INTO equity_reconciliation_results
-            (
-                run_id,
-                symbol,
-                timestamp,
-                metric_name,
-                source_a_value,
-                source_b_value,
-                difference,
-                is_discrepancy
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            results
+            ]
         )
+    return results
 
 def save_exceptions(df: pd.DataFrame, db_path: str = "reconciliation.duckdb") -> None:
+    rows = _exception_rows(df)
+    if not rows:
+        return
     with duckdb.connect(db_path) as conn:
         conn.executemany(
             """
@@ -276,5 +288,125 @@ def save_exceptions(df: pd.DataFrame, db_path: str = "reconciliation.duckdb") ->
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            df.values.tolist()
+            rows,
         )
+
+
+def _exception_rows(df: pd.DataFrame) -> list[tuple]:
+    return [tuple(row) for row in df.itertuples(index=False, name=None)]
+
+
+def get_pipeline_run(
+    run_id: str,
+    db_path: str = "reconciliation.duckdb",
+) -> dict[str, object] | None:
+    """Return a stored run summary used to short-circuit safe retries."""
+    with duckdb.connect(db_path, read_only=True) as conn:
+        row = conn.execute(
+            """
+            SELECT run_id, status, yahoo_row_count, alpaca_row_count,
+                   match_count, break_count
+            FROM pipeline_runs
+            WHERE run_id = ?
+            """,
+            [run_id],
+        ).fetchone()
+    if row is None:
+        return None
+    columns = (
+        "run_id",
+        "status",
+        "yahoo_row_count",
+        "alpaca_row_count",
+        "match_count",
+        "break_count",
+    )
+    return dict(zip(columns, row))
+
+
+def persist_equity_run(
+    *,
+    run_id: str,
+    started_at: str,
+    finished_at: str,
+    status: str,
+    yahoo_bars: pd.DataFrame,
+    alpaca_bars: pd.DataFrame,
+    reconciliation: pd.DataFrame,
+    exceptions: pd.DataFrame,
+    db_path: str = "reconciliation.duckdb",
+) -> bool:
+    """Atomically persist a complete equity run; return False if already stored."""
+    match_count = int((reconciliation["status"] == "MATCH").sum())
+    break_count = int((reconciliation["status"] == "BREAK").sum())
+    bar_rows = [
+        *_equity_bar_rows(yahoo_bars, "YAHOO", run_id),
+        *_equity_bar_rows(alpaca_bars, "ALPACA", run_id),
+    ]
+    result_rows = _reconciliation_rows(reconciliation, run_id)
+    exception_rows = _exception_rows(exceptions)
+
+    with duckdb.connect(db_path) as conn:
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            exists = conn.execute(
+                "SELECT 1 FROM pipeline_runs WHERE run_id = ?", [run_id]
+            ).fetchone()
+            if exists:
+                conn.execute("ROLLBACK")
+                return False
+
+            conn.execute(
+                """
+                INSERT INTO pipeline_runs (
+                    run_id, started_at, finished_at, status,
+                    yahoo_row_count, alpaca_row_count, match_count, break_count
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    started_at,
+                    finished_at,
+                    status,
+                    len(yahoo_bars),
+                    len(alpaca_bars),
+                    match_count,
+                    break_count,
+                ),
+            )
+            if bar_rows:
+                conn.executemany(
+                    """
+                    INSERT INTO equity_bars_staging
+                    (symbol, run_id, source, timestamp, open, high, low, close, volume)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    bar_rows,
+                )
+            if result_rows:
+                conn.executemany(
+                    """
+                    INSERT INTO equity_reconciliation_results
+                    (run_id, symbol, timestamp, metric_name, source_a_value,
+                     source_b_value, difference, is_discrepancy)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    result_rows,
+                )
+            if exception_rows:
+                conn.executemany(
+                    """
+                    INSERT INTO equity_exceptions
+                    (exception_id, run_id, instrument_type, symbol, trade_date,
+                     yahoo_close, alpaca_close, close_difference, severity,
+                     status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    exception_rows,
+                )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    return True

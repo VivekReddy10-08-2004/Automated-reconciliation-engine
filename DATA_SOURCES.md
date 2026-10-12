@@ -15,7 +15,7 @@ The project uses [`yfinance`](https://ranaroussi.github.io/yfinance/) to access 
 
 The following data is currently requested:
 
-- **Equities:** daily open, high, low, close, adjusted close, and volume data for the configured reconciliation symbols.
+- **Equities:** daily unadjusted open, high, low, close, and volume data for the configured reconciliation symbols. Automatic Yahoo adjustment is disabled so its price basis is closer to Alpaca's raw IEX bars.
 - **Equity options:** call and put chains by expiration, including strike, contract symbol, last price, bid, ask, volume, and open interest.
 - **Continuous futures:** Yahoo symbols `ES=F`, `NQ=F`, `CL=F`, `GC=F`, and `ZN=F` by default.
 - **FX spot:** `EURUSD=X`, `GBPUSD=X`, and `USDJPY=X` for forward valuation inputs.
@@ -69,6 +69,7 @@ The following inputs are part of the engine but are **not external market-data s
 ## Operational considerations
 
 - Source timestamps, exchange calendars, corporate-action adjustments, quote conditions, and symbol conventions can differ between providers.
+- Provider inputs are normalized to uppercase symbols and UTC-derived market dates before comparison. This reduces key mismatches but cannot make Yahoo and IEX coverage identical.
 - IEX equity data should not be assumed to match consolidated SIP data, and indicative options data should not be assumed to match OPRA.
 - Yahoo rate tickers are valuation proxies, not authoritative benchmark fixings or complete curves.
 - API credentials must remain in environment variables or an untracked environment file; never commit them to the repository.

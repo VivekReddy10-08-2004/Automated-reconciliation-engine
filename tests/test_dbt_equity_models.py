@@ -73,7 +73,7 @@ class DbtEquityModelTests(unittest.TestCase):
     def test_dbt_build_matches_python_reference(self):
         rows = []
         yahoo_close = [100.00, 100.00, 100.00]
-        alpaca_close = [100.00, 99.98, 99.90]
+        alpaca_close = [100.00, 99.80, 99.00]
         dates = ["2026-10-07", "2026-10-08", "2026-10-09"]
         for source, closes in (("YAHOO", yahoo_close), ("ALPACA", alpaca_close)):
             for trade_date, close in zip(dates, closes):
@@ -116,6 +116,8 @@ class DbtEquityModelTests(unittest.TestCase):
             provider_frame(alpaca_close),
             close_tolerance=0.05,
             warn_tolerance=0.01,
+            break_pct_tolerance=0.005,
+            warn_pct_tolerance=0.001,
         )
         pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
         self.assertEqual(actual["status"].tolist(), ["MATCH", "WARN", "BREAK"])
