@@ -25,5 +25,8 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi",
 ]
 
+[project.optional-dependencies]
+test = ["httpx2"]
+
 [tool.uv]
 package = false

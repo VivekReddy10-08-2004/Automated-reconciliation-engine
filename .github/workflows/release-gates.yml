@@ -12,12 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt ruff bandit pip-audit
+      - run: pip install -r requirements.txt httpx2 ruff bandit pip-audit
       - name: Formatting and lint
         run: |
           ruff format --check benchmarks reconciliation_engine/ingestion/massive.py reconciliation_engine/options_batch.py reconciliation_engine/storage/duckdb.py reconciliation_engine/storage/snapshot.py tests/test_recovery_controls.py tests/test_options_persistence.py
