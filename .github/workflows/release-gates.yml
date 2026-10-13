@@ -24,7 +24,13 @@ jobs:
           ruff check benchmarks reconciliation_engine/ingestion/massive.py reconciliation_engine/options_batch.py reconciliation_engine/storage/duckdb.py reconciliation_engine/storage/snapshot.py tests/test_recovery_controls.py tests/test_options_persistence.py
       - name: Unit and integration tests
         run: python -m unittest discover -s tests -v
+      - name: Initialize dbt source schema
+        env:
+          RECONCILIATION_DB_PATH: ${{ runner.temp }}/reconciliation-ci.duckdb
+        run: python -c "import os; from reconciliation_engine.storage.duckdb import initialize_database; initialize_database(os.environ['RECONCILIATION_DB_PATH'])"
       - name: dbt models and tests
+        env:
+          RECONCILIATION_DB_PATH: ${{ runner.temp }}/reconciliation-ci.duckdb
         run: dbt build --project-dir dbt --profiles-dir dbt
       - name: Minimal offline end-to-end demo
         run: python -m benchmarks.run_end_to_end_demo
