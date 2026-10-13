@@ -30,6 +30,7 @@ from reconciliation_engine.storage.duckdb import initialize_database
 REQUIRED_MODULES = (
     "reconciliation_engine.batch",
     "reconciliation_engine.api.service",
+    "reconciliation_engine.alerts",
     "reconciliation_engine.dashboard",
     "reconciliation_engine.notifications",
     "reconciliation_engine.ingestion.alpaca_equities",

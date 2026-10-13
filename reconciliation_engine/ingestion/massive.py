@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 import requests
 
+from reconciliation_engine.observability import get_telemetry
 from reconciliation_engine.security import load_massive_api_key
 
 
@@ -86,13 +87,22 @@ class MassiveClient:
         headers = {"Authorization": f"Bearer {self._api_key}"}
 
         for attempt in range(self._max_retries + 1):
-            self._limiter.wait()
-            response = self._session.get(
-                url,
-                params=dict(params or {}),
-                headers=headers,
-                timeout=self._timeout,
-            )
+            with get_telemetry().span(
+                "massive.http.get",
+                **{
+                    "server.address": "api.massive.com",
+                    "http.route": urlparse(url).path,
+                    "retry.attempt": attempt,
+                },
+            ) as span:
+                self._limiter.wait()
+                response = self._session.get(
+                    url,
+                    params=dict(params or {}),
+                    headers=headers,
+                    timeout=self._timeout,
+                )
+                span.set_attribute("http.response.status_code", response.status_code)
             if response.status_code not in RETRYABLE_STATUS_CODES:
                 response.raise_for_status()
                 payload = response.json()

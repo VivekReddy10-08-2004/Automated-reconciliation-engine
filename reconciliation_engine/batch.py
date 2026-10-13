@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 from dotenv import load_dotenv
+from opentelemetry import trace
 
 from alpaca.data.timeframe import TimeFrame
 
@@ -33,6 +34,7 @@ from reconciliation_engine.reconciliation.equities import (
     reconcile_equity_sources,
 )
 from reconciliation_engine.notifications import send_run_notification
+from reconciliation_engine.observability import configure_telemetry, get_telemetry, traced
 from reconciliation_engine.scaling.equity_ingestion import ingest_equity_partitions
 from reconciliation_engine.scaling.partitions import DEFAULT_SYMBOL_BUCKETS
 from reconciliation_engine.storage.duckdb import (
@@ -251,6 +253,7 @@ def replay_archived_run(
     )
 
 
+@traced("batch.reconciliation")
 def main(
     db_path: str = "reconciliation.duckdb",
     data_root: str | Path = "data",
@@ -263,6 +266,10 @@ def main(
     run_id = build_run_id(
         selected_symbols, effective_control_date, bucket_count=bucket_count
     )
+    active_span = trace.get_current_span()
+    active_span.set_attribute("run.id", run_id)
+    active_span.set_attribute("control.date", effective_control_date.isoformat())
+    active_span.set_attribute("symbol.count", len(selected_symbols))
     started_at = datetime.now(timezone.utc).isoformat()
     break_count = 0
 
@@ -327,13 +334,14 @@ def main(
                 for source, frame in raw_provider_bars.items()
             }
 
-        reconciliation_df = reconcile_equity_sources(
-            provider_bars,
-            close_tolerance=DEFAULT_BREAK_TOLERANCE,
-            warn_tolerance=DEFAULT_WARN_TOLERANCE,
-            break_pct_tolerance=DEFAULT_BREAK_PCT_TOLERANCE,
-            warn_pct_tolerance=DEFAULT_WARN_PCT_TOLERANCE,
-        )
+        with get_telemetry().span("reconciliation.compare", **{"run.id": run_id}):
+            reconciliation_df = reconcile_equity_sources(
+                provider_bars,
+                close_tolerance=DEFAULT_BREAK_TOLERANCE,
+                warn_tolerance=DEFAULT_WARN_TOLERANCE,
+                break_pct_tolerance=DEFAULT_BREAK_PCT_TOLERANCE,
+                warn_pct_tolerance=DEFAULT_WARN_PCT_TOLERANCE,
+            )
         archive_reconciliation_results(
             reconciliation_df,
             run_id,
@@ -348,18 +356,19 @@ def main(
         largest_difference = reconciliation_df["close_difference"].abs().max()
 
         exceptions_df = create_equity_exceptions(reconciliation_df, run_id)
-        persisted = persist_equity_run(
-            run_id=run_id,
-            started_at=started_at,
-            finished_at=finished_at,
-            status=run_status,
-            yahoo_bars=provider_bars["YAHOO"],
-            alpaca_bars=provider_bars["ALPACA"],
-            massive_bars=provider_bars["MASSIVE"],
-            reconciliation=reconciliation_df,
-            exceptions=exceptions_df,
-            db_path=db_path,
-        )
+        with get_telemetry().span("storage.persist_run", **{"run.id": run_id, "db.system": "duckdb"}):
+            persisted = persist_equity_run(
+                run_id=run_id,
+                started_at=started_at,
+                finished_at=finished_at,
+                status=run_status,
+                yahoo_bars=provider_bars["YAHOO"],
+                alpaca_bars=provider_bars["ALPACA"],
+                massive_bars=provider_bars["MASSIVE"],
+                reconciliation=reconciliation_df,
+                exceptions=exceptions_df,
+                db_path=db_path,
+            )
         if not persisted:
             existing_run = get_pipeline_run(run_id, db_path)
             if existing_run is None:
@@ -375,6 +384,11 @@ def main(
             "control_date": effective_control_date.isoformat(),
             "already_completed": not persisted,
         }
+        get_telemetry().record_run(
+            run_status,
+            records=len(reconciliation_df),
+            breaks=break_count,
+        )
 
         print(
             f"Run ID: {run_id} | "
@@ -399,6 +413,7 @@ def main(
             "symbols": list(selected_symbols),
             "control_date": effective_control_date.isoformat(),
         }
+        get_telemetry().record_run("FAILED", records=0, breaks=break_count)
         send_run_notification(failed_summary)
         raise
 
@@ -408,6 +423,7 @@ def main(
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    configure_telemetry(service_name="reconciliation-batch")
     parser = argparse.ArgumentParser(
         description="Run the live equity control or replay archived provider data."
     )

@@ -79,6 +79,10 @@ requirements; do not remove evidence solely to save local disk space.
 - `provider_request_metrics` captures latency, volume, and checkpoint reuse.
 - CLI partition lifecycle events are emitted as structured JSON logs without
   credentials or raw payloads.
+- OpenTelemetry traces preserve parent context across bounded worker threads,
+  and OTLP metrics use bounded provider/status/route dimensions.
+- Aggregated alert rules cover failed partitions, provider health, and overdue
+  exception SLAs with cooldown suppression.
 - `quarantine_records` is the dead-letter index for failed or malformed work.
 
 ## Production scale-out boundary

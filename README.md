@@ -70,6 +70,7 @@ and results are recorded in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 - Deterministic provider/symbol-bucket checkpoints with bounded parallel ingestion
 - Partition metrics, quarantine records, structured events, and exception SLAs
 - Authenticated read-only REST access with filtering, pagination, and exports
+- OTLP traces, exported metrics, trace-correlated logs, and aggregated alerts
 - Read-only DuckDB dashboard for latest breaks and operational analytics
 - Local ZeroMQ publish/subscribe feed with deterministic simulated equity ticks
 - Explainable prior-price anomaly scoring with a separate annotated-tick feed
@@ -183,6 +184,24 @@ GET /health
 
 See the [Export API guide](docs/EXPORT_API.md) for filters, pagination, download
 examples, authentication, and the DuckDB single-writer operating model.
+
+## Observability and alerting
+
+Set `RECONCILIATION_OTEL_ENABLED=true` to export traces and metrics over
+OTLP/HTTP. Batch runs, worker partitions, provider calls, reconciliation,
+DuckDB reads, API requests, and exports are traced. Metrics cover run outcomes,
+provider latency/failures, quarantines, API saturation, and alert delivery.
+
+```sh
+docker compose --env-file project.env -f observability/docker-compose.yaml up -d
+python -m reconciliation_engine.alerts --db reconciliation.duckdb
+```
+
+The included local stack routes traces to Tempo and metrics to Prometheus, with
+both available through Grafana. The alert evaluator sends aggregated webhook
+alerts for failed partitions, provider health, and overdue exception SLAs. See
+[OpenTelemetry and Alerting](docs/OBSERVABILITY.md) for configuration, signal
+contracts, thresholds, and production controls.
 
 Run the offline reconciliation tests without API credentials or network access:
 

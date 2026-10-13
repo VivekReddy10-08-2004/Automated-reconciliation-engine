@@ -25,6 +25,10 @@ On Windows, restrict `project.env` to the account that runs the control. Never p
 | `RECONCILIATION_SYMBOL_BUCKETS` | No | Stable bucket count; defaults to `64` and should remain fixed after production use |
 | `RECONCILIATION_MAX_WORKERS` | No | Bounded ingestion threads; defaults to `8`, maximum `64` |
 | `RECONCILIATION_EXPORT_API_KEY` | Yes for REST access | Bearer token for every `/api/v1/*` endpoint |
+| `RECONCILIATION_OTEL_ENABLED` | No | Enables OTLP trace and metric export; defaults to `false` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | When telemetry is enabled | Collector base URL; local example uses `http://127.0.0.1:4318` |
+| `ALERT_WEBHOOK_URL` | No | Structured operational alert destination; falls back to `WEBHOOK_URL` |
+| `ALERT_COOLDOWN_SECONDS` | No | Duplicate alert suppression in a running process; defaults to `900` |
 | `WEBHOOK_URL` | No | Receives `FAILED` and `SUCCESS_WITH_BREAKS` summaries; output is printed if omitted |
 | `REALTIME_ZMQ_ENDPOINT` | No | Raw simulated-tick endpoint; defaults to `tcp://127.0.0.1:5555` |
 | `REALTIME_SCORED_ZMQ_ENDPOINT` | No | Annotated-tick endpoint; defaults to `tcp://127.0.0.1:5556` |
@@ -116,7 +120,27 @@ Use one API worker with local DuckDB. Connections are read-only, short-lived,
 and bounded, but a query overlapping an external writer may receive `503`.
 Detailed endpoint and export examples are in [Read-Only Export API](EXPORT_API.md).
 
-## 5. Run the real-time demonstration
+## 5. Run observability and alert evaluation
+
+Start the optional loopback-only Collector, Tempo, Prometheus, and Grafana
+stack, then enable telemetry in `project.env`:
+
+```sh
+docker compose --env-file project.env -f observability/docker-compose.yaml up -d
+```
+
+Run the aggregate operational rules manually:
+
+```sh
+python -m reconciliation_engine.alerts --db reconciliation.duckdb
+```
+
+Schedule that command every five minutes for continuous SLA, failed-partition,
+provider-failure, and provider-latency evaluation. See
+[OpenTelemetry and Alerting](OBSERVABILITY.md) for the complete signal and alert
+contract.
+
+## 6. Run the real-time demonstration
 
 Open three terminals in the repository root. Start the scorer first:
 
@@ -144,7 +168,7 @@ python -m reconciliation_engine.dashboard --db reconciliation.duckdb
 
 Reference captures for both healthy and degraded modes are in [Dashboard demonstrations](DASHBOARD_DEMO.md).
 
-## 6. Run with Docker
+## 7. Run with Docker
 
 Docker packages only the one-shot equity batch. It does not contain Airflow, dbt, the real-time processes, or the dashboard.
 
@@ -162,7 +186,7 @@ docker compose -f orchestration/docker/compose.yaml run --rm \
 
 Do not use `docker compose down -v` unless deleting the persisted audit state is intentional.
 
-## 7. Expected operating scenarios
+## 8. Expected operating scenarios
 
 ### Clean run
 
@@ -191,7 +215,7 @@ Do not use `docker compose down -v` unless deleting the persisted audit state is
 - An unavailable option provider creates a `BREAK` for every contract from the available side, with an explicit missing-provider reason.
 - Futures comparisons require an explicit Yahoo-continuous to Massive-contract mapping; unmapped comparisons are rejected.
 
-## 8. Inspect the audit trail
+## 9. Inspect the audit trail
 
 ### Find recent runs
 
@@ -234,7 +258,7 @@ data/normalized/ALPACA/equities/run_id=<run-id>/data.parquet
 
 The supported local scheduler and log locations are documented in [Scheduling](SCHEDULING.md). Airflow is not included in this release, so there are no Airflow task logs to inspect. If orchestration is added, this section must document the workflow ID, manual trigger command, task-log location, retry behavior, and run-ID lookup before it is presented as runnable.
 
-## 9. Release evidence and safety checks
+## 10. Release evidence and safety checks
 
 Before publishing a revision:
 

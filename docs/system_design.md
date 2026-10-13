@@ -21,6 +21,8 @@ The system is a local Python application with independently runnable batch, real
 10. **Security Control Plane:** Secrets, access roles, encryption, retention, masking, and audit events apply across every module.
 11. **Read-Only Export API:** FastAPI serves authenticated, filtered run,
     reconciliation, exception, and export views through bounded DuckDB readers.
+12. **Observability Plane:** OpenTelemetry exports traces and bounded-cardinality
+    metrics through an OTLP Collector; aggregate rules deliver operational alerts.
 
 ---
 

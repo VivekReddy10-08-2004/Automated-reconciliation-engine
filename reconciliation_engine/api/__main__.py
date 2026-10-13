@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 
 import uvicorn
 
@@ -11,6 +12,7 @@ from reconciliation_engine.security import load_export_api_key
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", default="reconciliation.duckdb")
     parser.add_argument("--host", default="127.0.0.1")

@@ -18,6 +18,10 @@ output, not only to network encryption.
 - The export API uses bearer authentication, parameterized filters, bounded
   result sizes, and short-lived `read_only=True` DuckDB connections. Export
   events exclude tokens and row contents.
+- OpenTelemetry metrics use bounded operational labels, while trace attributes
+  exclude credentials, request headers, SQL text, raw payloads, and export rows.
+  Alert logs contain stable fingerprints and aggregate counts, never webhook
+  URLs or secret values.
 - Raw market-data staging is excluded from the dashboard to reduce unnecessary
   exposure.
 

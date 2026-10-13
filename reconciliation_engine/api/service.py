@@ -12,6 +12,7 @@ from pathlib import Path
 import secrets
 import tempfile
 import threading
+import time
 from typing import Literal
 
 import duckdb
@@ -19,8 +20,9 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import pandas as pd
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-from reconciliation_engine.observability import log_event
+from reconciliation_engine.observability import configure_telemetry, get_telemetry, log_event
 
 
 DEFAULT_QUERY_CONCURRENCY = 4
@@ -52,24 +54,37 @@ class ReadOnlyDuckDB:
         self._slots = threading.BoundedSemaphore(max_concurrent_queries)
 
     @contextmanager
-    def connection(self):
+    def connection(self, operation: str = "query"):
+        telemetry = get_telemetry()
+        started = time.monotonic()
         acquired = self._slots.acquire(timeout=self.acquire_timeout_seconds)
         if not acquired:
+            telemetry.api_query_rejections.add(
+                1, {"db.system": "duckdb", "rejection.reason": "capacity"}
+            )
+            log_event("api_database_capacity_rejected", operation=operation)
             raise DatabaseBusyError("Read query capacity is currently exhausted")
+        attributes = {"db.system": "duckdb", "db.operation.name": operation}
+        telemetry.api_active_queries.add(1, attributes)
         try:
-            with duckdb.connect(str(self.db_path), read_only=True) as connection:
-                yield connection
+            with telemetry.span("duckdb.query", **attributes):
+                with duckdb.connect(str(self.db_path), read_only=True) as connection:
+                    yield connection
         finally:
+            telemetry.api_db_duration.record(
+                (time.monotonic() - started) * 1000, attributes
+            )
+            telemetry.api_active_queries.add(-1, attributes)
             self._slots.release()
 
     def rows(self, sql: str, parameters: list[object] | None = None) -> list[dict]:
-        with self.connection() as connection:
+        with self.connection("select_many") as connection:
             cursor = connection.execute(sql, parameters or [])
             columns = [item[0] for item in cursor.description]
             return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
     def scalar(self, sql: str, parameters: list[object] | None = None) -> object:
-        with self.connection() as connection:
+        with self.connection("select_scalar") as connection:
             row = connection.execute(sql, parameters or []).fetchone()
             return row[0] if row else None
 
@@ -181,6 +196,7 @@ def create_app(
 ) -> FastAPI:
     if export_max_rows <= 0:
         raise ValueError("export_max_rows must be positive")
+    telemetry = configure_telemetry(service_name="reconciliation-api")
     store = ReadOnlyDuckDB(
         db_path,
         max_concurrent_queries=max_concurrent_queries,
@@ -192,6 +208,30 @@ def create_app(
         description="Authenticated read-only access to curated reconciliation data.",
     )
     app.state.store = store
+    if telemetry.enabled:
+        FastAPIInstrumentor.instrument_app(
+            app,
+            tracer_provider=telemetry.tracer_provider,
+            meter_provider=telemetry.meter_provider,
+        )
+
+    @app.middleware("http")
+    async def observe_request(request, call_next):
+        started = time.monotonic()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            route = request.scope.get("route")
+            route_name = getattr(route, "path", request.url.path)
+            get_telemetry().record_api_request(
+                request.method,
+                route_name,
+                status_code,
+                (time.monotonic() - started) * 1000,
+            )
 
     def authenticate(
         credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
@@ -393,6 +433,7 @@ def create_app(
             row_count=len(rows),
             filtered=bool(where),
         )
+        get_telemetry().record_export(output_format, len(rows))
         return StreamingResponse(
             iter([payload]),
             media_type=media_type,

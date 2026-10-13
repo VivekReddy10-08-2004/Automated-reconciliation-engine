@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import copy_context
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 import time
 
 import pandas as pd
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from reconciliation_engine.ingestion.providers import EquityProviderAdapter
-from reconciliation_engine.observability import log_event
+from reconciliation_engine.observability import get_telemetry, log_event, traced
 from reconciliation_engine.reconciliation.equities import validate_equity_bars
 from reconciliation_engine.scaling.partitions import WorkPartition, build_work_partitions
 from reconciliation_engine.storage.data_lake import EQUITY_COLUMNS, normalize_equity_dataframe
@@ -47,7 +50,7 @@ def _canonical_from_archive(frame: pd.DataFrame) -> pd.DataFrame:
     return frame[EQUITY_COLUMNS].copy()
 
 
-def _execute_partition(
+def _execute_partition_inner(
     partition: WorkPartition,
     adapter: EquityProviderAdapter,
     start: datetime,
@@ -68,7 +71,15 @@ def _execute_partition(
         if raw is None:
             started = time.monotonic()
             try:
-                raw = adapter.fetch(partition.symbols, start, end)
+                with get_telemetry().span(
+                    "provider.fetch",
+                    provider=partition.provider,
+                    **{
+                        "instrument.type": partition.instrument_type,
+                        "symbol.count": len(partition.symbols),
+                    },
+                ):
+                    raw = adapter.fetch(partition.symbols, start, end)
             finally:
                 latency_ms = (time.monotonic() - started) * 1000
             write_partition_once(raw, partition, layer="raw", data_root=data_root)
@@ -96,6 +107,37 @@ def _execute_partition(
         )
 
 
+def _execute_partition(
+    partition: WorkPartition,
+    adapter: EquityProviderAdapter,
+    start: datetime,
+    end: datetime,
+    data_root: str | Path,
+) -> PartitionOutcome:
+    with get_telemetry().span(
+        "ingestion.partition",
+        provider=partition.provider,
+        **{
+            "instrument.type": partition.instrument_type,
+            "symbol.bucket": partition.symbol_bucket,
+            "symbol.count": len(partition.symbols),
+            "partition.id": partition.partition_id,
+            "run.id": partition.run_id,
+        },
+    ) as span:
+        outcome = _execute_partition_inner(partition, adapter, start, end, data_root)
+        span.set_attribute("partition.reused_archive", outcome.reused_archive)
+        span.set_attribute("partition.duration_ms", outcome.latency_ms)
+        span.set_attribute("partition.status", "FAILED" if outcome.error else "SUCCESS")
+        if outcome.frame is not None:
+            span.set_attribute("partition.row_count", len(outcome.frame))
+        if outcome.error is not None:
+            span.record_exception(outcome.error)
+            span.set_status(Status(StatusCode.ERROR, type(outcome.error).__name__))
+        return outcome
+
+
+@traced("ingestion.equity.partitions")
 def ingest_equity_partitions(
     *,
     run_id: str,
@@ -120,6 +162,11 @@ def ingest_equity_partitions(
         providers=tuple(adapters),
         bucket_count=bucket_count,
     )
+    current_span = trace.get_current_span()
+    current_span.set_attribute("run.id", run_id)
+    current_span.set_attribute("partition.count", len(partitions))
+    current_span.set_attribute("symbol.count", len(symbols))
+    current_span.set_attribute("worker.max_count", max_workers)
     register_work_partitions(partitions, db_path)
     for partition in partitions:
         mark_partition_running(partition.partition_id, db_path)
@@ -131,6 +178,7 @@ def ingest_equity_partitions(
     ) as executor:
         futures = {
             executor.submit(
+                copy_context().run,
                 _execute_partition,
                 partition,
                 adapters[partition.provider],
@@ -180,6 +228,14 @@ def ingest_equity_partitions(
                 symbol_bucket=outcome.partition.symbol_bucket,
                 error_type=type(outcome.error).__name__,
             )
+            get_telemetry().record_partition(
+                provider=outcome.partition.provider,
+                instrument_type=outcome.partition.instrument_type,
+                status="FAILED",
+                latency_ms=outcome.latency_ms,
+                rows=0,
+                reused_archive=outcome.reused_archive,
+            )
             continue
         provider_frames[outcome.partition.provider].append(outcome.frame)
         finish_work_partition(
@@ -204,6 +260,14 @@ def ingest_equity_partitions(
             symbol_bucket=outcome.partition.symbol_bucket,
             returned_rows=len(outcome.frame),
             latency_ms=round(outcome.latency_ms, 3),
+            reused_archive=outcome.reused_archive,
+        )
+        get_telemetry().record_partition(
+            provider=outcome.partition.provider,
+            instrument_type=outcome.partition.instrument_type,
+            status="SUCCESS",
+            latency_ms=outcome.latency_ms,
+            rows=len(outcome.frame),
             reused_archive=outcome.reused_archive,
         )
 
