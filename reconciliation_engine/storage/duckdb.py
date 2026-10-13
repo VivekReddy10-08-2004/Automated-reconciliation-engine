@@ -1,9 +1,9 @@
-import duckdb
-import pandas as pd
 from datetime import datetime, timezone
 
-from reconciliation_engine.scaling.partitions import WorkPartition
+import duckdb
+import pandas as pd
 
+from reconciliation_engine.scaling.partitions import WorkPartition
 from reconciliation_engine.security import restrict_file_permissions
 
 
@@ -85,10 +85,10 @@ def _migrate_reconciliation_results(conn: duckdb.DuckDBPyConnection) -> None:
         "RENAME TO equity_reconciliation_results"
     )
 
+
 def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
     with duckdb.connect(db_path) as conn:
-
-        #pipeline runs table
+        # pipeline runs table
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS pipeline_runs (
@@ -110,7 +110,7 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
             "massive_row_count BIGINT DEFAULT 0"
         )
 
-        #equity bars staging table
+        # equity bars staging table
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS equity_bars_staging (
@@ -133,7 +133,7 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
             "ALTER TABLE equity_bars_staging ALTER COLUMN volume SET DATA TYPE DOUBLE"
         )
 
-        #equity reconciliation results table
+        # equity reconciliation results table
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS equity_reconciliation_results (
@@ -165,7 +165,7 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
             "break_reason VARCHAR"
         )
 
-        #create exceptions table
+        # create exceptions table
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS equity_exceptions (
@@ -269,6 +269,47 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
                 reason VARCHAR,
                 raw_archive_path VARCHAR,
                 created_at TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS option_runs (
+                run_id VARCHAR PRIMARY KEY,
+                underlying VARCHAR NOT NULL,
+                expiry DATE NOT NULL,
+                started_at TIMESTAMP,
+                finished_at TIMESTAMP,
+                status VARCHAR NOT NULL,
+                yahoo_row_count BIGINT,
+                alpaca_row_count BIGINT,
+                match_count BIGINT,
+                break_count BIGINT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS option_contracts_staging (
+                run_id VARCHAR, source VARCHAR, underlying VARCHAR, expiry DATE,
+                strike DOUBLE, option_type VARCHAR, contract_symbol VARCHAR,
+                trade_date DATE, close DOUBLE, bid DOUBLE, ask DOUBLE,
+                volume DOUBLE, open_interest DOUBLE,
+                PRIMARY KEY (run_id, source, underlying, expiry, strike,
+                             option_type, trade_date)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS option_reconciliation_results (
+                run_id VARCHAR, underlying VARCHAR, expiry DATE, strike DOUBLE,
+                option_type VARCHAR, contract_symbol VARCHAR, trade_date DATE,
+                source_a VARCHAR, source_b VARCHAR, source_a_close DOUBLE,
+                source_b_close DOUBLE, close_difference DOUBLE, status VARCHAR,
+                break_reason VARCHAR,
+                PRIMARY KEY (run_id, underlying, expiry, strike, option_type,
+                             trade_date, source_a, source_b)
             )
             """
         )
@@ -421,6 +462,7 @@ def record_quarantine(
             ],
         )
 
+
 def save_pipeline_run(
     run_id: str,
     started_at: str,
@@ -459,11 +501,9 @@ def save_pipeline_run(
             ),
         )
 
+
 def save_equity_bars(
-    df: pd.DataFrame,
-    source: str,
-    run_id: str,
-    db_path: str = "reconciliation.duckdb"
+    df: pd.DataFrame, source: str, run_id: str, db_path: str = "reconciliation.duckdb"
 ) -> None:
     rows = _equity_bar_rows(df, source, run_id)
     with duckdb.connect(db_path) as conn:
@@ -478,25 +518,14 @@ def save_equity_bars(
 
 
 def _equity_bar_rows(df: pd.DataFrame, source: str, run_id: str) -> list[tuple]:
-    columns = [
-        "symbol",
-        "trade_date",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume"
-    ]
+    columns = ["symbol", "trade_date", "open", "high", "low", "close", "volume"]
 
     selected_df = df[columns].copy()
 
     selected_df["run_id"] = run_id
     selected_df["source"] = source
 
-    selected_df.rename(
-        columns={"trade_date": "timestamp"},
-        inplace=True
-    )
+    selected_df.rename(columns={"trade_date": "timestamp"}, inplace=True)
 
     selected_df = selected_df[
         [
@@ -508,17 +537,15 @@ def _equity_bar_rows(df: pd.DataFrame, source: str, run_id: str) -> list[tuple]:
             "high",
             "low",
             "close",
-            "volume"
+            "volume",
         ]
     ]
 
     return [tuple(row) for row in selected_df.itertuples(index=False, name=None)]
 
-    
+
 def save_reconciliation_results(
-    df: pd.DataFrame,
-    run_id: str,
-    db_path: str = "reconciliation.duckdb"
+    df: pd.DataFrame, run_id: str, db_path: str = "reconciliation.duckdb"
 ) -> None:
     results = _reconciliation_rows(df, run_id)
     with duckdb.connect(db_path) as conn:
@@ -559,37 +586,38 @@ def _reconciliation_rows(df: pd.DataFrame, run_id: str) -> list[tuple]:
         break_reason = row.get("break_reason") if is_pairwise else None
         results.extend(
             [
-            (
-                run_id,
-                row["symbol"],
-                row["trade_date"],
-                "close",
-                source_a,
-                source_b,
-                close_a,
-                close_b,
-                row["close_difference"],
-                row["status"] == "BREAK",
-                status,
-                break_reason,
-            ),
-            (
-                run_id,
-                row["symbol"],
-                row["trade_date"],
-                "volume",
-                source_a,
-                source_b,
-                volume_a,
-                volume_b,
-                row["volume_difference"],
-                row["status"] == "BREAK",
-                status,
-                break_reason,
-            ),
+                (
+                    run_id,
+                    row["symbol"],
+                    row["trade_date"],
+                    "close",
+                    source_a,
+                    source_b,
+                    close_a,
+                    close_b,
+                    row["close_difference"],
+                    row["status"] == "BREAK",
+                    status,
+                    break_reason,
+                ),
+                (
+                    run_id,
+                    row["symbol"],
+                    row["trade_date"],
+                    "volume",
+                    source_a,
+                    source_b,
+                    volume_a,
+                    volume_b,
+                    row["volume_difference"],
+                    row["status"] == "BREAK",
+                    status,
+                    break_reason,
+                ),
             ]
         )
     return results
+
 
 def save_exceptions(df: pd.DataFrame, db_path: str = "reconciliation.duckdb") -> None:
     rows = _exception_rows(df)
@@ -746,6 +774,113 @@ def persist_equity_run(
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     exception_rows,
+                )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    return True
+
+
+def _database_value(value):
+    """Convert Pandas missing scalars to SQL NULL without changing valid values."""
+    return None if pd.isna(value) else value
+
+
+def persist_option_run(
+    *,
+    run_id: str,
+    underlying: str,
+    expiry: str,
+    started_at: str,
+    finished_at: str,
+    status: str,
+    yahoo_options: pd.DataFrame,
+    alpaca_options: pd.DataFrame,
+    reconciliation: pd.DataFrame,
+    db_path: str = "reconciliation.duckdb",
+) -> bool:
+    """Atomically persist one option-chain control and reject duplicate runs."""
+    option_columns = [
+        "underlying",
+        "expiry",
+        "strike",
+        "option_type",
+        "contract_symbol",
+        "trade_date",
+        "close",
+        "bid",
+        "ask",
+        "volume",
+        "open_interest",
+    ]
+    staging_rows = []
+    for source, frame in (("YAHOO", yahoo_options), ("ALPACA", alpaca_options)):
+        missing = [column for column in option_columns if column not in frame.columns]
+        if missing:
+            raise ValueError(f"{source} option data is missing columns: {missing}")
+        staging_rows.extend(
+            (run_id, source, *(_database_value(value) for value in row))
+            for row in frame[option_columns].itertuples(index=False, name=None)
+        )
+    result_columns = [
+        "underlying",
+        "expiry",
+        "strike",
+        "option_type",
+        "contract_symbol",
+        "trade_date",
+        "source_a",
+        "source_b",
+        "source_a_close",
+        "source_b_close",
+        "close_difference",
+        "status",
+        "break_reason",
+    ]
+    missing = [
+        column for column in result_columns if column not in reconciliation.columns
+    ]
+    if missing:
+        raise ValueError(f"Option reconciliation is missing columns: {missing}")
+    result_rows = [
+        (run_id, *(_database_value(value) for value in row))
+        for row in reconciliation[result_columns].itertuples(index=False, name=None)
+    ]
+    match_count = int((reconciliation["status"] == "MATCH").sum())
+    break_count = int((reconciliation["status"] == "BREAK").sum())
+    with duckdb.connect(db_path) as conn:
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            if conn.execute(
+                "SELECT 1 FROM option_runs WHERE run_id = ?", [run_id]
+            ).fetchone():
+                conn.execute("ROLLBACK")
+                return False
+            conn.execute(
+                "INSERT INTO option_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    run_id,
+                    underlying.upper(),
+                    expiry,
+                    started_at,
+                    finished_at,
+                    status,
+                    len(yahoo_options),
+                    len(alpaca_options),
+                    match_count,
+                    break_count,
+                ],
+            )
+            if staging_rows:
+                conn.executemany(
+                    "INSERT INTO option_contracts_staging VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    staging_rows,
+                )
+            if result_rows:
+                conn.executemany(
+                    "INSERT INTO option_reconciliation_results VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    result_rows,
                 )
             conn.execute("COMMIT")
         except Exception:

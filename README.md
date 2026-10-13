@@ -2,18 +2,60 @@
 
 A Python reconciliation engine for equities, equity options, and futures using Yahoo Finance, Alpaca, and Massive.
 
-```text
-Yahoo + Alpaca + Massive -> normalize -> DuckDB + Parquet
-                                      -> provider-pair reconciliation
-                                      -> exceptions + dbt facts + dashboard
+```mermaid
+flowchart LR
+    subgraph Providers
+        Y[Yahoo Finance]
+        A[Alpaca]
+        M[Massive]
+    end
 
-simulated ticks -> ZeroMQ -> anomaly scorer -> ZeroMQ -> read-only dashboard
+    Y & A & M --> I[Validated, partitioned ingestion]
+    I --> P[(Immutable Parquet checkpoints)]
+    I --> R[Pairwise reconciliation]
+    R --> D[(Atomic DuckDB control state)]
+    R --> E[Exceptions and quarantine]
+    D --> S[(Atomic read-only snapshot)]
+    S --> API[Authenticated export API]
+    D --> DBT[dbt facts and tests]
+    D --> UI[Control-room dashboard]
+
+    Z[Simulated ZeroMQ ticks] --> AS[Explainable anomaly scorer]
+    AS --> UI
+
+    I & R & API --> O[OpenTelemetry traces and metrics]
 ```
 
-The equity three-provider batch and simulated real-time paths are runnable.
-Options and futures have provider-aware ingestion and reconciliation libraries;
-their persisted batch orchestration remains planned. See the [operator runbook](docs/RUNBOOK.md)
-for end-to-end commands and failure handling.
+The equity three-provider batch, persisted Yahoo/Alpaca option-chain control,
+and simulated real-time paths are runnable. Futures have provider-aware
+ingestion and reconciliation libraries; persisted futures orchestration remains
+planned. See the [operator runbook](docs/RUNBOOK.md) for end-to-end commands and
+failure handling. Reproducible performance, crash, API load, and offline demo
+evidence is published in [`benchmarks/README.md`](benchmarks/README.md).
+
+## Verified Performance
+
+| Benchmark | Result |
+| --- | --- |
+| 100K reconciliation rows per source | **32,840 rows/sec** · **3.045 seconds** · **276 MB peak RSS** |
+| 1M reconciliation rows per source | **33,142 rows/sec** · **30.173 seconds** · **1.07 GB peak RSS** |
+| Correctness oracle | **0 lost records** · **0 duplicate keys** · **100% of deliberate breaks detected** |
+| API load at 1, 10, 25, and 50 clients | **0% errors** across every measured concurrency level |
+| Crash recovery | **Passed** before archive, after archive, and after atomic commit |
+| dbt release gate | **23/23 models and tests passed** |
+
+![Labeled reconciliation throughput chart showing rows per second for 100K and 1M source rows](benchmarks/charts/throughput.svg)
+
+<p align="center">
+  <img src="benchmarks/charts/scaling.svg" alt="Labeled peak memory chart for 100K and 1M reconciliation workloads" width="49%">
+  <img src="benchmarks/charts/latency.svg" alt="Labeled p50, p95, and p99 API latency chart at 1, 10, 25, and 50 clients" width="49%">
+</p>
+
+The raw CSV/JSON evidence, environment metadata, recovery report, and exact
+reproduction commands are committed under [`benchmarks/`](benchmarks/README.md).
+The 1M case establishes the safe in-memory envelope on the benchmark host;
+larger 5M–10M workloads require a future chunked or SQL execution path rather
+than the current in-memory Pandas implementation.
 
 ## Visual Walkthrough
 
@@ -64,17 +106,22 @@ and results are recorded in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 - Equity facts for Yahoo/Alpaca, Yahoo/Massive, and Alpaca/Massive
 - Versioned dbt models for typed staging, provider pairing, and reconciliation facts
 - Offline-tested three-provider option reconciliation by full contract identity
+- Persisted Yahoo/Alpaca option-chain controls with atomic commits and deterministic retry IDs
 - Yahoo/Massive futures reconciliation with mandatory contract-roll mapping
 - `MATCH` / `WARN` / `BREAK` status using explicit close-price tolerances
 - Immutable raw and normalized Parquet archives partitioned by source and run ID
 - Deterministic provider/symbol-bucket checkpoints with bounded parallel ingestion
+- Timeout and HTTP 429 retries plus corrupt-payload and disk-failure quarantine
 - Partition metrics, quarantine records, structured events, and exception SLAs
 - Authenticated read-only REST access with filtering, pagination, and exports
+- Atomically published DuckDB snapshots that isolate API readers from active batch writes
 - OTLP traces, exported metrics, trace-correlated logs, and aggregated alerts
 - Read-only DuckDB dashboard for latest breaks and operational analytics
 - Local ZeroMQ publish/subscribe feed with deterministic simulated equity ticks
 - Explainable prior-price anomaly scoring with a separate annotated-tick feed
 - Non-root Docker Compose batch runner with persistent DuckDB and Parquet state
+- Repeatable performance, recovery, fault-injection, API-load, and end-to-end demo harnesses
+- GitHub Actions release gates for tests, dbt, formatting, security scans, and integration
 - Private local secret/database permissions and lazy credential loading
 
 ## Control Guarantees
@@ -86,6 +133,9 @@ and results are recorded in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 | Data validation | Equity inputs reject missing columns, nulls, non-numeric OHLCV values, non-finite or negative values, duplicate `symbol/trade_date` keys, and inconsistent OHLC ranges. Numeric fractional aggregate volume is preserved because some providers report it. |
 | Safe retries | The control date, sorted symbol universe, and rule version produce a deterministic run ID. A completed retry performs no provider calls or writes. DuckDB commits the run, stages, results, and exceptions in one transaction; interrupted Parquet writes are immutable and resumable. |
 | Bounded scale | Symbols use stable hash buckets and each provider/bucket is independently retryable. Worker concurrency is capped, while Massive also enforces its shared calls-per-minute budget. |
+| Failure isolation | Timeouts and retryable HTTP failures are bounded; invalid payloads and failed disk writes create auditable quarantine records rather than partial successful runs. |
+| Concurrent reads | A completed DuckDB database is copied into a temporary catalog and atomically published for read-only API consumers, keeping active writes off the serving path. |
+| Release evidence | CI runs unit/integration tests, dbt checks, Ruff formatting and lint, security scans, recovery/correctness gates, and an offline end-to-end demo. |
 
 Provider alignment does not imply identical prices. IEX versus broader-market
 coverage, quote timing, and vendor policies can create legitimate differences;
@@ -148,6 +198,14 @@ Replay a saved run without calling Yahoo, Alpaca, or Massive:
 python -m reconciliation_engine.batch --replay-run-id <run-id>
 ```
 
+Run the fully offline release story—synthetic ingestion, one deliberate data
+break, reconciliation, atomic persistence, archive recovery, CSV export, and
+in-memory trace capture—with one command:
+
+```sh
+python -m benchmarks.run_end_to_end_demo
+```
+
 Provider files use this layout:
 
 ```text
@@ -185,6 +243,19 @@ GET /health
 See the [Export API guide](docs/EXPORT_API.md) for filters, pagination, download
 examples, authentication, and the DuckDB single-writer operating model.
 
+For API traffic that must not overlap the active batch database, atomically
+publish a stable serving snapshot and point the API at it:
+
+```sh
+python -m reconciliation_engine.storage.snapshot \
+  reconciliation.duckdb snapshots/reconciliation-read.duckdb
+python -m reconciliation_engine.api \
+  --db snapshots/reconciliation-read.duckdb
+```
+
+The publisher builds a complete temporary catalog before replacing the serving
+file, so consumers never observe a partially copied database.
+
 ## Observability and alerting
 
 Set `RECONCILIATION_OTEL_ENABLED=true` to export traces and metrics over
@@ -207,6 +278,14 @@ Run the offline reconciliation tests without API credentials or network access:
 
 ```powershell
 python -m unittest discover -s tests -v
+```
+
+Run the repeatable correctness, recovery, and performance evidence:
+
+```sh
+python -m benchmarks.benchmark_reconciliation --sizes 100000 1000000
+python -m benchmarks.benchmark_recovery
+python -m benchmarks.benchmark_ingestion --symbols 1000 --workers 1 4 8
 ```
 
 The Python and dbt controls preserve observations available from only one
@@ -357,6 +436,7 @@ synthetic inputs, and licensing caveats.
 Automated-reconciliation-engine/
 ├── reconciliation_engine/        # Python application package
 │   ├── batch.py                   # Daily batch command and archive replay
+│   ├── options_batch.py           # Atomic, idempotent option-chain control
 │   ├── dashboard.py               # Read-only reconciliation dashboard
 │   ├── notifications.py           # Break and failure notifications
 │   ├── security.py                # Credentials and file permissions
@@ -382,6 +462,7 @@ Automated-reconciliation-engine/
 │   │   ├── duckdb.py
 │   │   ├── data_lake.py
 │   │   ├── partitioned_data_lake.py
+│   │   ├── snapshot.py            # Atomic read-only API publication
 │   │   └── retention.py
 │   └── realtime/                  # ZeroMQ publish/subscribe path
 │       ├── anomaly_scorer.py       # Explainable real-time anomaly scoring
@@ -391,6 +472,8 @@ Automated-reconciliation-engine/
 │   ├── models/
 │   └── tests/
 ├── tests/                         # Offline unit and integration tests
+├── benchmarks/                    # Workloads, raw results, and charts
+├── .github/workflows/             # Automated release gates
 ├── docs/                          # Architecture, operations, and security
 │   └── RUNBOOK.md                 # End-to-end operator and release runbook
 ├── orchestration/                 # Deployment and future scheduling
@@ -409,6 +492,15 @@ rules used throughout the project.
 
 ## Options Data Availability
 
+Run and persist one Yahoo/Alpaca expiration with a deterministic logical ID:
+
+```sh
+python -m reconciliation_engine.options_batch AAPL 2026-12-18 \
+  --control-date 2026-10-13 --db reconciliation.duckdb
+```
+
+Repeating the same underlying, expiration, and control date adds no rows.
+
 Comparable option contracts may be unavailable because of account entitlements, subscription level, expiration, or provider coverage. The project does not replace missing observations with another provider's values or synthetic prices and does not report an unavailable comparison as a `MATCH`.
 
 When one provider returns no option contracts, every contract from an available provider is retained as a pair-specific `BREAK`. A provider pair returns no rows only when both sides are empty. Offline fixtures prove matched, price-break, missing-contract, snapshot-date, and duplicate-contract behavior independently of vendor access.
@@ -424,8 +516,7 @@ required before those records can become a valid reconciliation pair.
 
 - Add persisted futures quality reporting with explicit continuous-to-expiring contract roll mappings
 - Add an idempotent Airflow DAG with documented task-log inspection
-- Extend DuckDB/Parquet/dbt coverage to options and derivative controls
-- Add a live option reconciliation command with an explicit unavailable-data message
+- Extend Parquet/dbt coverage to options and derivative controls
 - Add exception aging and owner/SLA analytics
 - Replace local secret files with a managed secret store for deployment
 

@@ -1,0 +1,3 @@
+benchmark,rows,workers,duration_seconds,rows_per_second,peak_rss_mb,cpu_utilization_percent,disk_growth_mb
+reconciliation,100000,1,3.045111,32839.52,276.04,96.94,0.0
+reconciliation,1000000,1,30.173183,33142.01,1066.08,96.9,0.0

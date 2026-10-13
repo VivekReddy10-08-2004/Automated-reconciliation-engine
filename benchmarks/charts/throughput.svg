@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 900 520">
+<title id="title">Reconciliation throughput</title>
+<desc id="desc">Two deterministic source frames · full outer comparison · one worker Measured with time.perf_counter; includes validation, merge, and classification</desc>
+<rect width="900" height="520" rx="18" fill="#0f172a"/>
+<style>text{font-family:Inter,ui-sans-serif,system-ui,sans-serif}.title{font-size:24px;font-weight:700;fill:#f8fafc}.subtitle{font-size:13px;fill:#94a3b8}.axis{font-size:12px;fill:#cbd5e1}.value{font-size:12px;font-weight:700;fill:#f8fafc}.label{font-size:13px;font-weight:600;fill:#e2e8f0}.grid{stroke:#334155;stroke-width:1}.baseline{stroke:#94a3b8;stroke-width:1.5}</style>
+<text class="title" x="32" y="38">Reconciliation throughput</text>
+<text class="subtitle" x="32" y="64">Two deterministic source frames · full outer comparison · one worker</text>
+<line class="grid" x1="100" y1="405.0" x2="865" y2="405.0"/>
+<text class="axis" text-anchor="end" x="88" y="409.0">0</text>
+<line class="grid" x1="100" y1="330.0" x2="865" y2="330.0"/>
+<text class="axis" text-anchor="end" x="88" y="334.0">9,943</text>
+<line class="grid" x1="100" y1="255.0" x2="865" y2="255.0"/>
+<text class="axis" text-anchor="end" x="88" y="259.0">19,885</text>
+<line class="grid" x1="100" y1="180.0" x2="865" y2="180.0"/>
+<text class="axis" text-anchor="end" x="88" y="184.0">29,828</text>
+<line class="grid" x1="100" y1="105.0" x2="865" y2="105.0"/>
+<text class="axis" text-anchor="end" x="88" y="109.0">39,770</text>
+<line class="baseline" x1="100" y1="405" x2="865" y2="405"/>
+<text class="label" text-anchor="middle" transform="translate(24 255.0) rotate(-90)">Processed rows per second</text>
+<rect x="216.2" y="157.3" width="150.0" height="247.7" rx="6" fill="#38bdf8"/>
+<text class="value" text-anchor="middle" x="291.2" y="148.3">32,840 rows/s</text>
+<text class="axis" text-anchor="middle" x="291.2" y="429">100,000 rows</text>
+<rect x="598.8" y="155.0" width="150.0" height="250.0" rx="6" fill="#38bdf8"/>
+<text class="value" text-anchor="middle" x="673.8" y="146.0">33,142 rows/s</text>
+<text class="axis" text-anchor="middle" x="673.8" y="429">1,000,000 rows</text>
+<text class="label" text-anchor="middle" x="482.5" y="459">Input rows per source</text>
+<text class="subtitle" x="32" y="498">Measured with time.perf_counter; includes validation, merge, and classification</text>
+</svg>

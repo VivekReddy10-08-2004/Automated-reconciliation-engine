@@ -1,0 +1,23 @@
+{
+  "all_passed": true,
+  "cases": [
+    {
+      "input_rows_per_source": 100000,
+      "output_rows": 100000,
+      "expected_breaks": 101,
+      "actual_breaks": 101,
+      "duplicate_keys": 0,
+      "lost_records": 0,
+      "passed": true
+    },
+    {
+      "input_rows_per_source": 1000000,
+      "output_rows": 1000000,
+      "expected_breaks": 1004,
+      "actual_breaks": 1004,
+      "duplicate_keys": 0,
+      "lost_records": 0,
+      "passed": true
+    }
+  ]
+}

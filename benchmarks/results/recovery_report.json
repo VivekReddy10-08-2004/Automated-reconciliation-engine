@@ -1,0 +1,33 @@
+{
+  "all_passed": true,
+  "cases": [
+    {
+      "stage": "before_archive",
+      "exit_code": 17,
+      "pipeline_runs": 0,
+      "archives": 0,
+      "passed": true
+    },
+    {
+      "stage": "after_archive",
+      "exit_code": 18,
+      "pipeline_runs": 0,
+      "archives": 5,
+      "passed": true
+    },
+    {
+      "stage": "after_commit",
+      "exit_code": 19,
+      "pipeline_runs": 1,
+      "archives": 5,
+      "passed": true
+    },
+    {
+      "stage": "idempotent_retry",
+      "first_write": true,
+      "second_write": false,
+      "pipeline_runs": 1,
+      "passed": true
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+workers,rows,duration_seconds,rows_per_second,peak_rss_mb,cpu_utilization_percent,disk_growth_mb
+1,1000,12.7009,78.73,228.52,44.52,2.81
+4,1000,10.2847,97.23,226.45,54.82,2.81
+8,1000,10.2986,97.10,229.00,57.87,2.81

@@ -28,6 +28,7 @@ token*.json
 *.csv
 *.tsv
 *.xlsx
+!benchmarks/results/*.csv
 
 # Personal editor and agent settings
 .vscode/

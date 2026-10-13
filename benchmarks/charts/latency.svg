@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 900 520">
+<title id="title">Export API latency under concurrent load</title>
+<desc id="desc">10,000-row DuckDB fixture · 20 authenticated requests at each concurrency level Metric: end-to-end HTTP response time · Error rate: 0% for all four runs</desc>
+<rect width="900" height="520" rx="18" fill="#0f172a"/>
+<style>text{font-family:Inter,ui-sans-serif,system-ui,sans-serif}.title{font-size:24px;font-weight:700;fill:#f8fafc}.subtitle{font-size:13px;fill:#94a3b8}.axis{font-size:12px;fill:#cbd5e1}.value{font-size:12px;font-weight:700;fill:#f8fafc}.label{font-size:13px;font-weight:600;fill:#e2e8f0}.grid{stroke:#334155;stroke-width:1}.baseline{stroke:#94a3b8;stroke-width:1.5}</style>
+<text class="title" x="32" y="38">Export API latency under concurrent load</text>
+<text class="subtitle" x="32" y="64">10,000-row DuckDB fixture · 20 authenticated requests at each concurrency level</text>
+<line class="grid" x1="100" y1="405.0" x2="865" y2="405.0"/>
+<text class="axis" text-anchor="end" x="88" y="409.0">0</text>
+<line class="grid" x1="100" y1="330.0" x2="865" y2="330.0"/>
+<text class="axis" text-anchor="end" x="88" y="334.0">437</text>
+<line class="grid" x1="100" y1="255.0" x2="865" y2="255.0"/>
+<text class="axis" text-anchor="end" x="88" y="259.0">874</text>
+<line class="grid" x1="100" y1="180.0" x2="865" y2="180.0"/>
+<text class="axis" text-anchor="end" x="88" y="184.0">1,311</text>
+<line class="grid" x1="100" y1="105.0" x2="865" y2="105.0"/>
+<text class="axis" text-anchor="end" x="88" y="109.0">1,748</text>
+<line class="baseline" x1="100" y1="405" x2="865" y2="405"/>
+<text class="label" text-anchor="middle" transform="translate(24 255.0) rotate(-90)">Response latency (milliseconds)</text>
+<rect x="141.6" y="328.4" width="33.0" height="76.6" rx="3" fill="#38bdf8"/>
+<text class="value" text-anchor="middle" transform="translate(158.1 321.4) rotate(-55)">447</text>
+<rect x="177.6" y="314.7" width="33.0" height="90.3" rx="3" fill="#a78bfa"/>
+<text class="value" text-anchor="middle" transform="translate(194.1 307.7) rotate(-55)">526</text>
+<rect x="213.6" y="276.7" width="33.0" height="128.3" rx="3" fill="#fb7185"/>
+<text class="value" text-anchor="middle" transform="translate(230.1 269.7) rotate(-55)">748</text>
+<text class="axis" text-anchor="middle" x="195.6" y="429">1 client</text>
+<rect x="332.9" y="354.6" width="33.0" height="50.4" rx="3" fill="#38bdf8"/>
+<text class="value" text-anchor="middle" transform="translate(349.4 347.6) rotate(-55)">294</text>
+<rect x="368.9" y="303.9" width="33.0" height="101.1" rx="3" fill="#a78bfa"/>
+<text class="value" text-anchor="middle" transform="translate(385.4 296.9) rotate(-55)">589</text>
+<rect x="404.9" y="282.8" width="33.0" height="122.2" rx="3" fill="#fb7185"/>
+<text class="value" text-anchor="middle" transform="translate(421.4 275.8) rotate(-55)">712</text>
+<text class="axis" text-anchor="middle" x="386.9" y="429">10 clients</text>
+<rect x="524.1" y="197.8" width="33.0" height="207.2" rx="3" fill="#38bdf8"/>
+<text class="value" text-anchor="middle" transform="translate(540.6 190.8) rotate(-55)">1,208</text>
+<rect x="560.1" y="158.4" width="33.0" height="246.6" rx="3" fill="#a78bfa"/>
+<text class="value" text-anchor="middle" transform="translate(576.6 151.4) rotate(-55)">1,437</text>
+<rect x="596.1" y="150.8" width="33.0" height="254.2" rx="3" fill="#fb7185"/>
+<text class="value" text-anchor="middle" transform="translate(612.6 143.8) rotate(-55)">1,482</text>
+<text class="axis" text-anchor="middle" x="578.1" y="429">25 clients</text>
+<rect x="715.4" y="295.7" width="33.0" height="109.3" rx="3" fill="#38bdf8"/>
+<text class="value" text-anchor="middle" transform="translate(731.9 288.7) rotate(-55)">637</text>
+<rect x="751.4" y="264.7" width="33.0" height="140.3" rx="3" fill="#a78bfa"/>
+<text class="value" text-anchor="middle" transform="translate(767.9 257.7) rotate(-55)">818</text>
+<rect x="787.4" y="255.8" width="33.0" height="149.2" rx="3" fill="#fb7185"/>
+<text class="value" text-anchor="middle" transform="translate(803.9 248.8) rotate(-55)">870</text>
+<text class="axis" text-anchor="middle" x="769.4" y="429">50 clients</text>
+<rect x="600" y="78" width="12" height="12" rx="2" fill="#38bdf8"/>
+<text class="axis" x="618" y="89">p50</text>
+<rect x="682" y="78" width="12" height="12" rx="2" fill="#a78bfa"/>
+<text class="axis" x="700" y="89">p95</text>
+<rect x="764" y="78" width="12" height="12" rx="2" fill="#fb7185"/>
+<text class="axis" x="782" y="89">p99</text>
+<text class="label" text-anchor="middle" x="482.5" y="459">Concurrent authenticated clients</text>
+<text class="subtitle" x="32" y="498">Metric: end-to-end HTTP response time · Error rate: 0% for all four runs</text>
+</svg>

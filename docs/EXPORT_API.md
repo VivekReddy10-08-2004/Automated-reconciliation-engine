@@ -88,6 +88,20 @@ snapshot or curated Parquet files for the API, or move workflow state to a
 transactional database and analytics to a warehouse. Do not point multiple API
 workers on different machines at the same writable DuckDB file.
 
+The included snapshot publisher makes that recommendation executable. Run it
+only after a completed batch, then point the API at the published file:
+
+```sh
+python -m reconciliation_engine.storage.snapshot \
+  reconciliation.duckdb snapshots/reconciliation-read.duckdb
+python -m reconciliation_engine.api \
+  --db snapshots/reconciliation-read.duckdb --host 127.0.0.1 --port 8000
+```
+
+Publication builds a complete temporary DuckDB copy and atomically replaces the
+destination. Existing API readers keep their current file handle while new
+processes receive the new consistent snapshot.
+
 ## Security and operational behavior
 
 - Tokens are compared with a constant-time comparison and never logged.

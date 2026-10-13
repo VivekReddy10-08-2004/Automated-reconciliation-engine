@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
 import os
 import threading
 import time
+from collections.abc import Iterator, Mapping
 from typing import Any
 from urllib.parse import urlparse
 
@@ -13,7 +13,6 @@ import requests
 
 from reconciliation_engine.observability import get_telemetry
 from reconciliation_engine.security import load_massive_api_key
-
 
 BASE_URL = "https://api.massive.com"
 DEFAULT_CALLS_PER_MINUTE = 5
@@ -51,9 +50,7 @@ def _get_global_limiter() -> MassiveRateLimiter:
     with _GLOBAL_LIMITER_LOCK:
         if _GLOBAL_LIMITER is None:
             calls_per_minute = int(
-                os.getenv(
-                    "MASSIVE_CALLS_PER_MINUTE", str(DEFAULT_CALLS_PER_MINUTE)
-                )
+                os.getenv("MASSIVE_CALLS_PER_MINUTE", str(DEFAULT_CALLS_PER_MINUTE))
             )
             _GLOBAL_LIMITER = MassiveRateLimiter(calls_per_minute)
         return _GLOBAL_LIMITER
@@ -87,22 +84,30 @@ class MassiveClient:
         headers = {"Authorization": f"Bearer {self._api_key}"}
 
         for attempt in range(self._max_retries + 1):
-            with get_telemetry().span(
-                "massive.http.get",
-                **{
-                    "server.address": "api.massive.com",
-                    "http.route": urlparse(url).path,
-                    "retry.attempt": attempt,
-                },
-            ) as span:
-                self._limiter.wait()
-                response = self._session.get(
-                    url,
-                    params=dict(params or {}),
-                    headers=headers,
-                    timeout=self._timeout,
-                )
-                span.set_attribute("http.response.status_code", response.status_code)
+            try:
+                with get_telemetry().span(
+                    "massive.http.get",
+                    **{
+                        "server.address": "api.massive.com",
+                        "http.route": urlparse(url).path,
+                        "retry.attempt": attempt,
+                    },
+                ) as span:
+                    self._limiter.wait()
+                    response = self._session.get(
+                        url,
+                        params=dict(params or {}),
+                        headers=headers,
+                        timeout=self._timeout,
+                    )
+                    span.set_attribute(
+                        "http.response.status_code", response.status_code
+                    )
+            except (requests.Timeout, requests.ConnectionError):
+                if attempt == self._max_retries:
+                    raise
+                time.sleep(min(2**attempt, 30))
+                continue
             if response.status_code not in RETRYABLE_STATUS_CODES:
                 response.raise_for_status()
                 payload = response.json()
@@ -130,7 +135,7 @@ class MassiveClient:
             payload = self.get_json(next_url, next_params)
             results = payload.get("results", [])
             if not isinstance(results, list):
-                raise ValueError("Massive paginated response has non-list results")
+                raise TypeError("Massive paginated response has non-list results")
             for result in results:
                 if isinstance(result, dict):
                     yield result

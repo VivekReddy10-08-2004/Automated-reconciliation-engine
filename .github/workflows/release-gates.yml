@@ -1,0 +1,40 @@
+name: release-gates
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt ruff bandit pip-audit
+      - name: Formatting and lint
+        run: |
+          ruff format --check benchmarks reconciliation_engine/ingestion/massive.py reconciliation_engine/options_batch.py reconciliation_engine/storage/duckdb.py reconciliation_engine/storage/snapshot.py tests/test_recovery_controls.py tests/test_options_persistence.py
+          ruff check benchmarks reconciliation_engine/ingestion/massive.py reconciliation_engine/options_batch.py reconciliation_engine/storage/duckdb.py reconciliation_engine/storage/snapshot.py tests/test_recovery_controls.py tests/test_options_persistence.py
+      - name: Unit and integration tests
+        run: python -m unittest discover -s tests -v
+      - name: dbt models and tests
+        run: dbt build --project-dir dbt --profiles-dir dbt
+      - name: Minimal offline end-to-end demo
+        run: python -m benchmarks.run_end_to_end_demo
+      - name: Correctness and recovery gates
+        run: |
+          python -m benchmarks.benchmark_reconciliation --sizes 10000
+          python -m benchmarks.benchmark_recovery
+      - name: Security scans
+        run: |
+          bandit -q -lll -r reconciliation_engine
+          pip-audit -r requirements.txt
+      - name: Container contract
+        run: python -m unittest tests.test_containerization -v
