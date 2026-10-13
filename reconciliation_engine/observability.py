@@ -25,10 +25,12 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.trace import Status, StatusCode
 from dotenv import load_dotenv
 
+from reconciliation_engine import __version__
+
 
 LOGGER = logging.getLogger("reconciliation_engine")
 INSTRUMENTATION_NAME = "reconciliation_engine"
-INSTRUMENTATION_VERSION = "0.1.0"
+INSTRUMENTATION_VERSION = __version__
 
 
 def _environment_bool(name: str, default: bool = False) -> bool:

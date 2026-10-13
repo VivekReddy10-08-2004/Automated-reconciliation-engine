@@ -2,12 +2,15 @@
 
 Verification was refreshed on October 13, 2026 from the repository root.
 
+This document records evidence, not merely implemented code. The canonical
+current/planned boundary is the [Feature Support Matrix](FEATURE_SUPPORT.md).
+
 ## Automated checks
 
 | Check | Result |
 | --- | --- |
 | `python -m reconciliation_engine.smoke` | Passed: 26 imports, configuration, credentials, two local endpoints, and seven DuckDB tables; no market-data request |
-| `python -m unittest discover -s tests -v` | Passed: 88 tests |
+| `python -m unittest discover -s tests -v` | Passed: 112 tests |
 | `dbt build --project-dir dbt --profiles-dir dbt` | Passed: 23 models/tests, 0 warnings, 0 errors |
 | `git diff --check` | Passed |
 | Tracked secret/runtime filename check | Passed; only the intentionally tracked `project.env.example` template matched the initial broad search |
@@ -69,5 +72,6 @@ The full suite also passed two live in-process ZeroMQ integration tests: ten val
 - Docker could not be built or run on this host because the `docker` executable is not installed. The Dockerfile, Compose contract, persistent-volume configuration, and secret exclusion tests passed; exact runtime verification commands are published in `benchmarks/README.md`.
 - The same limitation prevented actual Collector/Tempo/Prometheus/Grafana execution. In-memory span/metric integration and the full telemetry unit suite passed, but backend screenshots or queries require a Docker-capable host.
 - Airflow was not exercised because no Task 18 DAG exists in the repository. It remains planned and is not described as runnable.
-- Persisted option and futures batch controls were not exercised; their provider-aware reconciliation libraries are covered by offline tests.
+- The persisted Yahoo/Alpaca options command is implemented and its atomic, idempotent DuckDB workflow is verified with offline provider fixtures. It was not exercised against live option providers, so no live options result is claimed.
+- Futures ingestion and reconciliation remain library-only and offline-tested; no persisted futures batch command is included.
 

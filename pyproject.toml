@@ -1,6 +1,6 @@
 [project]
 name = "financial-reconciliation-engine"
-version = "0.1.0"
+version = "1.0.0"
 description = "Automated Financial Data Ingestion & Reconciliation Engine"
 requires-python = ">=3.10"
 dependencies = [
@@ -16,7 +16,6 @@ dependencies = [
     "requests",
     "duckdb",
     "dbt-duckdb",
-    "apache-airflow",
     "rich",
     "fastapi",
     "uvicorn",

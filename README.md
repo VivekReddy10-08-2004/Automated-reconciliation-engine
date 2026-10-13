@@ -26,12 +26,31 @@ flowchart LR
     I & R & API --> O[OpenTelemetry traces and metrics]
 ```
 
-The equity three-provider batch, persisted Yahoo/Alpaca option-chain control,
-and simulated real-time paths are runnable. Futures have provider-aware
-ingestion and reconciliation libraries; persisted futures orchestration remains
-planned. See the [operator runbook](docs/RUNBOOK.md) for end-to-end commands and
-failure handling. Reproducible performance, crash, API load, and offline demo
-evidence is published in [`benchmarks/README.md`](benchmarks/README.md).
+The equity three-provider batch is live-verified. The persisted Yahoo/Alpaca
+options control and simulated real-time path are implemented and offline-tested.
+Futures are library-only, and Airflow remains planned. See the
+[Feature Support Matrix](docs/FEATURE_SUPPORT.md) for exact evidence boundaries.
+
+**Navigate:** [Support](#feature-support) · [Results](#verified-performance) ·
+[Quick start](#quick-start) · [Example](#example-break) · [API](#api-overview) ·
+[Testing](#testing-and-reproducibility) · [Limitations](#limitations-and-roadmap) ·
+[Docs](#documentation)
+
+## Feature Support
+
+| Component | v1.0.0 support |
+| --- | --- |
+| Three-provider equity reconciliation | **Implemented, live verified** |
+| Persisted Yahoo/Alpaca options control | **Implemented, offline verified**; live provider run not claimed |
+| Futures reconciliation | Library implemented; persisted orchestration planned |
+| Export API and atomic snapshots | Implemented and offline/load tested |
+| Benchmarks and crash recovery | Implemented and measured |
+| OpenTelemetry | Instrumented and offline tested; backend stack not runtime verified |
+| Docker batch | Contract tested; image execution not verified on the evidence host |
+| Apache Airflow | **Planned; no DAG or runtime included** |
+
+See the [full support matrix](docs/FEATURE_SUPPORT.md) for definitions, evidence,
+and deployment boundaries.
 
 ## Verified Performance
 
@@ -75,54 +94,27 @@ matches with no breaks:
 ### 2. Start the live control room
 
 Run the scorer, dashboard, and simulated publisher in separate terminals as
-shown in [Run the Real-Time Feed](#run-the-real-time-feed). The healthy view
+shown in the [operator runbook](docs/RUNBOOK.md#6-run-the-real-time-demonstration). The healthy view
 combines the latest DuckDB batch state with annotated ZeroMQ ticks:
 
 ![Control-room dashboard with batch and real-time panels available](docs/dashboard_demos/both-available.svg)
 
-### 3. Recognize degraded operation
+The batch and real-time panels degrade independently. Synthetic captures for
+[batch unavailable](docs/dashboard_demos/batch-unavailable.svg) and
+[real-time unavailable](docs/dashboard_demos/realtime-unavailable.svg) are
+available without expanding the main page. Exact verification commands and
+results are in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 
-The two panels fail independently, so an operator can immediately distinguish
-a database problem from a real-time feed problem.
+## Key Capabilities
 
-**Batch unavailable:** the live tick panel remains usable.
-
-![Dashboard showing batch data unavailable while real-time data remains visible](docs/dashboard_demos/batch-unavailable.svg)
-
-**Real-time feed unavailable:** the stored batch panel remains usable.
-
-![Dashboard showing real-time data unavailable while batch data remains visible](docs/dashboard_demos/realtime-unavailable.svg)
-
-These are synthetic, non-sensitive captures. The exact verification commands
-and results are recorded in [Release Evidence](docs/RELEASE_EVIDENCE.md).
-
-## Current MVP
-
-- Normalized Yahoo Finance equity bars: `symbol, trade_date, open, high, low, close, volume`
-- Normalized Yahoo Finance option chains for calls and puts
-- Normalized Alpaca option chains using the same canonical option schema
-- Normalized Alpaca daily equity bars using the same equity schema
-- Normalized Massive equity, option, and futures data behind one quota controller
-- Equity facts for Yahoo/Alpaca, Yahoo/Massive, and Alpaca/Massive
-- Versioned dbt models for typed staging, provider pairing, and reconciliation facts
-- Offline-tested three-provider option reconciliation by full contract identity
-- Persisted Yahoo/Alpaca option-chain controls with atomic commits and deterministic retry IDs
-- Yahoo/Massive futures reconciliation with mandatory contract-roll mapping
-- `MATCH` / `WARN` / `BREAK` status using explicit close-price tolerances
-- Immutable raw and normalized Parquet archives partitioned by source and run ID
-- Deterministic provider/symbol-bucket checkpoints with bounded parallel ingestion
-- Timeout and HTTP 429 retries plus corrupt-payload and disk-failure quarantine
-- Partition metrics, quarantine records, structured events, and exception SLAs
-- Authenticated read-only REST access with filtering, pagination, and exports
-- Atomically published DuckDB snapshots that isolate API readers from active batch writes
-- OTLP traces, exported metrics, trace-correlated logs, and aggregated alerts
-- Read-only DuckDB dashboard for latest breaks and operational analytics
-- Local ZeroMQ publish/subscribe feed with deterministic simulated equity ticks
-- Explainable prior-price anomaly scoring with a separate annotated-tick feed
-- Non-root Docker Compose batch runner with persistent DuckDB and Parquet state
-- Repeatable performance, recovery, fault-injection, API-load, and end-to-end demo harnesses
-- GitHub Actions release gates for tests, dbt, formatting, security scans, and integration
-- Private local secret/database permissions and lazy credential loading
+- Canonical Yahoo, Alpaca, and Massive ingestion with provider-pair lineage.
+- Full-outer equity and option reconciliation with explicit missing-side breaks.
+- Immutable Parquet checkpoints, deterministic run IDs, and atomic DuckDB commits.
+- Bounded partition concurrency, provider quota control, retries, and quarantine.
+- Persisted, idempotent Yahoo/Alpaca option-chain controls verified offline.
+- dbt equity facts, exception SLAs, authenticated exports, and serving snapshots.
+- Trace-correlated OpenTelemetry signals and an explainable ZeroMQ anomaly demo.
+- Repeatable correctness, performance, load, fault, and crash-recovery evidence.
 
 ## Control Guarantees
 
@@ -142,84 +134,51 @@ coverage, quote timing, and vendor policies can create legitimate differences;
 the warning band keeps small differences visible without treating all of them
 as critical breaks.
 
-## Run
+## Quick Start
 
-1. Copy `project.env.example` to `project.env`, add `ALPACA_API_KEY`,
-   `ALPACA_SECRET_KEY`, and `MASSIVE_API_KEY`, then set the desired
-   `RECONCILIATION_SYMBOLS` universe. Massive-backed commands share the
-   `MASSIVE_CALLS_PER_MINUTE=5` safety limit. Use
-   `RECONCILIATION_SYMBOL_BUCKETS` and `RECONCILIATION_MAX_WORKERS` to tune
-   deterministic partitioning and bounded concurrency.
-   On POSIX systems, run `chmod 600 project.env`.
-2. Install dependencies with `pip install -r requirements.txt`.
-3. Run the offline release check. It validates imports, configuration, local
-   endpoints, and a temporary DuckDB schema without fetching market data:
-
-```powershell
-python -m reconciliation_engine.smoke
-```
-
-4. Run the reconciliation demo from the project root:
-
-```powershell
-python -m reconciliation_engine.batch
-```
-
-The command compares recent daily bars for the comma-separated symbols in
-`RECONCILIATION_SYMBOLS` (default: `AAPL`), saves the audit trail to DuckDB, and
-archives Yahoo, Alpaca, Massive, and reconciliation data under `data/`. Each archive
-contains its `run_id` and an existing run file is never overwritten.
-
-One logical run is allowed for each US-market control date, symbol universe,
-and rule version. Retrying that combination returns the stored result without
-calling either provider again. Use `--control-date` for a reproducible backfill:
-
-```powershell
-python -m reconciliation_engine.batch --symbol AAPL --control-date 2026-10-09
-```
-
-Override the configured universe for one run with one or more `--symbol`
-arguments:
-
-```powershell
-python -m reconciliation_engine.batch --symbol MSFT
-python -m reconciliation_engine.batch --symbol AAPL --symbol MSFT --symbol NVDA
-python -m reconciliation_engine.batch --symbol AAPL,MSFT,NVDA
-```
-
-CLI symbols take precedence over `RECONCILIATION_SYMBOLS`. Symbols are
-case-normalized, de-duplicated, and validated before either provider is called.
-The dashboard requires no separate configuration: it reads the instruments
-stored by the selected reconciliation run.
-
-Replay a saved run without calling Yahoo, Alpaca, or Massive:
-
-```powershell
-python -m reconciliation_engine.batch --replay-run-id <run-id>
-```
-
-Run the fully offline release story—synthetic ingestion, one deliberate data
-break, reconciliation, atomic persistence, archive recovery, CSV export, and
-in-memory trace capture—with one command:
+The fastest demonstration is completely offline and needs no provider keys:
 
 ```sh
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m reconciliation_engine.smoke
 python -m benchmarks.run_end_to_end_demo
 ```
 
-Provider files use this layout:
+The demo generates deterministic provider frames, injects one break, archives
+inputs, reconciles and persists the run, restores its result, exports CSV, and
+captures a trace. To run live equities after configuring the owner-only
+`project.env` file:
 
-```text
-data/raw/<SOURCE>/equities/run_id=<run-id>/payload.parquet
-data/normalized/<SOURCE>/equities/run_id=<run-id>/data.parquet
-data/reconciliation/equities/run_id=<run-id>/results.parquet
-data/partitions/<raw|normalized>/control_date=<date>/instrument_type=EQUITY/symbol_bucket=<bucket>/provider=<SOURCE>/partition_id=<partition-id>/<file>.parquet
+```sh
+python -m reconciliation_engine.batch --symbol AAPL --control-date 2026-10-09
 ```
 
-See [Scalability and Deployment Model](docs/SCALABILITY.md) for partition
-retries, provider isolation, retention, operational metrics, and the production
-transition from local DuckDB to object storage plus transactional workflow state.
+To run the implemented but not live-verified options path:
 
-## Read-only REST API
+```sh
+python -m reconciliation_engine.options_batch AAPL 2026-12-18 \
+  --control-date 2026-10-13 --db reconciliation.duckdb
+```
+
+Replay equity evidence without provider calls with
+`python -m reconciliation_engine.batch --replay-run-id <run-id>`. Configuration,
+backfills, archive layout, Docker, scheduling, dashboard, and recovery procedures
+are in the [operator runbook](docs/RUNBOOK.md).
+
+## Example Break
+
+```text
+run_id=demo-run  status=SUCCESS_WITH_BREAKS  comparisons=1,000  breaks=1
+symbol=S42  source_a=YAHOO  source_b=ALPACA
+status=BREAK  reason=PRICE_DIFFERENCE  close_difference=-2.00
+```
+
+Missing provider observations are also retained as `BREAK` records; the engine
+does not hide them with an inner join or substitute synthetic market values.
+
+## API Overview
 
 After a reconciliation has been persisted, start the export service:
 
@@ -256,269 +215,71 @@ python -m reconciliation_engine.api \
 The publisher builds a complete temporary catalog before replacing the serving
 file, so consumers never observe a partially copied database.
 
-## Observability and alerting
-
-Set `RECONCILIATION_OTEL_ENABLED=true` to export traces and metrics over
-OTLP/HTTP. Batch runs, worker partitions, provider calls, reconciliation,
-DuckDB reads, API requests, and exports are traced. Metrics cover run outcomes,
-provider latency/failures, quarantines, API saturation, and alert delivery.
+## Testing and Reproducibility
 
 ```sh
-docker compose --env-file project.env -f observability/docker-compose.yaml up -d
-python -m reconciliation_engine.alerts --db reconciliation.duckdb
-```
-
-The included local stack routes traces to Tempo and metrics to Prometheus, with
-both available through Grafana. The alert evaluator sends aggregated webhook
-alerts for failed partitions, provider health, and overdue exception SLAs. See
-[OpenTelemetry and Alerting](docs/OBSERVABILITY.md) for configuration, signal
-contracts, thresholds, and production controls.
-
-Run the offline reconciliation tests without API credentials or network access:
-
-```powershell
 python -m unittest discover -s tests -v
-```
-
-Run the repeatable correctness, recovery, and performance evidence:
-
-```sh
+dbt build --project-dir dbt --profiles-dir dbt
 python -m benchmarks.benchmark_reconciliation --sizes 100000 1000000
 python -m benchmarks.benchmark_recovery
-python -m benchmarks.benchmark_ingestion --symbols 1000 --workers 1 4 8
+node benchmarks/api_load_test.js
 ```
 
-The Python and dbt controls preserve observations available from only one
-provider and classify them as breaks instead of silently dropping them.
+CI also checks Ruff formatting/lint, Bandit, dependency vulnerabilities, the
+container contract, and the offline end-to-end story. Raw results and the load
+fixture procedure are in [Benchmark Evidence](benchmarks/README.md).
 
-Build the SQL transformation layer against the local DuckDB file:
+## Operations
 
-```powershell
-dbt build --project-dir dbt --profiles-dir dbt
-```
+- **Docker:** `docker compose -f orchestration/docker/compose.yaml run --rm batch`
+- **Dashboard:** `python -m reconciliation_engine.dashboard --db reconciliation.duckdb --refresh 0.5`
+- **Simulated real time:** start the anomaly scorer, dashboard, and publisher as documented in the runbook.
+- **Telemetry and alerts:** enable OTLP export and run `python -m reconciliation_engine.alerts`.
+- **Scheduling:** use the documented cron or Windows Task Scheduler entries; Airflow is not included.
 
-Set `RECONCILIATION_DB_PATH` to target another DuckDB file. A successful build
-creates the queryable `main.fct_equity_reconciliation` table with `MATCH`,
-`WARN`, and `BREAK` outcomes. Close differences warn above the greater of
-`$0.01` or `0.10%`; they break above the greater of `$0.05` or `0.50%`.
-Missing closes always break.
-
-## Run with Docker Compose
-
-Docker runs only the one-shot batch pipeline. Airflow and the real-time feed are
-intentionally outside this image.
-
-1. Create `project.env` from `project.env.example`, replace the two Alpaca
-   placeholders, set `RECONCILIATION_SYMBOLS`, and optionally set `WEBHOOK_URL`.
-2. Build the minimal batch image:
-
-```sh
-docker compose -f orchestration/docker/compose.yaml build --pull
-```
-
-3. Run one reconciliation:
-
-```sh
-docker compose -f orchestration/docker/compose.yaml run --rm batch
-```
-
-For a one-off Docker override without editing `project.env`:
-
-```sh
-docker compose -f orchestration/docker/compose.yaml run --rm \
-  -e RECONCILIATION_SYMBOLS=MSFT,NVDA batch
-```
-
-The named volume `automated-reconciliation-engine-state` retains
-`reconciliation.duckdb` and the complete `data/` archive after the container
-exits. Confirm persisted run count with:
-
-```sh
-docker compose -f orchestration/docker/compose.yaml run --rm \
-  --entrypoint python batch -c "import duckdb; c=duckdb.connect('/app/state/reconciliation.duckdb', read_only=True); print(c.execute('select count(*) from pipeline_runs').fetchone()[0])"
-```
-
-Credentials are supplied from `project.env` at container runtime. The
-deny-by-default `.dockerignore` prevents that file, local data, Git history, and
-developer environments from entering the image build context.
-
-## Run the Real-Time Feed
-
-The initial feed is explicitly simulated and does not require API credentials.
-Start the subscriber in one terminal:
-
-```powershell
-python -m reconciliation_engine.realtime.subscriber --count 10
-```
-
-Then start the publisher in another terminal:
-
-```powershell
-python -m reconciliation_engine.realtime.publisher --count 10
-```
-
-Both commands use `REALTIME_ZMQ_ENDPOINT`, which defaults to the local endpoint
-`tcp://127.0.0.1:5555`. Each JSON tick contains exactly `symbol`, `price`,
-`exchange_timestamp`, `received_timestamp`, and `latency_ms`. Omit `--count` to
-run continuously and stop cleanly with Ctrl+C.
-
-To score the simulated feed, start the scorer before the publisher:
-
-```powershell
-python -m reconciliation_engine.realtime.anomaly_scorer --count 10 --threshold-pct 0.1
-```
-
-Then run the publisher in another terminal:
-
-```powershell
-python -m reconciliation_engine.realtime.publisher --count 10
-```
-
-The scorer preserves every raw field and adds `pct_change`, `is_anomaly`, and
-an explanatory `reason`. It republishes annotated ticks to
-`REALTIME_SCORED_ZMQ_ENDPOINT`, which defaults to `tcp://127.0.0.1:5556`.
-The default rule threshold is 1%; the lower `0.1` demo threshold intentionally
-flags a movement in the deterministic simulated sequence. The optional
-`isolation_forest_flags` function supports offline comparison without changing
-the transparent rule used by the live scorer.
-
-View a one-time reconciliation control-room snapshot. It remains usable when
-either DuckDB or the annotated feed is unavailable:
-
-```powershell
-python -m reconciliation_engine.dashboard --db reconciliation.duckdb
-```
-
-Add `--refresh 0.5` for a continuously updating batch and real-time view:
-
-```powershell
-python -m reconciliation_engine.dashboard --db reconciliation.duckdb --refresh 0.5
-```
-
-The dashboard opens DuckDB in read-only mode and uses only a ZeroMQ `SUB`
-socket. It displays the latest batch status and MATCH/WARN/BREAK counts, the top
-five breaks, the most recent annotated tick and latency, anomalies observed in
-the last 60 seconds, and the latest anomaly reason. Refresh requests below 0.5
-seconds are bounded to 0.5 seconds.
-
-| Panel | Operator question |
-| --- | --- |
-| Batch reconciliation | Did the control complete, what matched/warned/broke, and which five breaks are largest? |
-| Real-time anomaly feed | What was the latest tick and latency, and were recent movements anomalous? |
-
-Start the anomaly scorer and simulated publisher as shown above to populate the
-live panel. See [Dashboard degraded-mode demonstrations](docs/DASHBOARD_DEMO.md)
-for captured examples of both panels available and each independent failure.
-
-## Schedule the Daily Control
-
-See [docs/SCHEDULING.md](docs/SCHEDULING.md) for complete Windows Task Scheduler
-and Ubuntu cron setup. Both schedules run at 4:30 PM America/New_York on
-weekdays, after the regular US equity-market close.
-
-## Data Security
-
-- Keep `project.env` local and set its permissions to owner-only (`chmod 600 project.env` on Linux/macOS).
-- Rotate credentials immediately if they are printed, shared, or committed.
-- API clients load credentials only when a provider call is made; tests and analytics do not need secrets.
-- DuckDB files are restricted to the current OS user when initialized.
-- The dashboard reads curated reconciliation results and aggregate metrics, not raw credential or payload data.
-- The REST API requires a bearer token and exposes only curated read-only views and bounded exports.
-- If a key may have been exposed, revoke or rotate it at Alpaca or Massive as applicable; changing the local file does not invalidate a copied key.
-
-See [docs/DATA_SECURITY.md](docs/DATA_SECURITY.md) for the threat model and production controls.
-See [DATA_SOURCES.md](DATA_SOURCES.md) for provider coverage, entitlements,
-synthetic inputs, and licensing caveats.
+The [operator runbook](docs/RUNBOOK.md) owns full configuration, Docker,
+ZeroMQ, scheduling, failure recovery, audit queries, and secret-handling
+instructions. See [Data Security](docs/DATA_SECURITY.md), [Observability](docs/OBSERVABILITY.md),
+and [Data Sources](DATA_SOURCES.md) for their respective contracts.
 
 ## Project Structure
 
 ```text
 Automated-reconciliation-engine/
-├── reconciliation_engine/        # Python application package
-│   ├── batch.py                   # Daily batch command and archive replay
-│   ├── options_batch.py           # Atomic, idempotent option-chain control
-│   ├── dashboard.py               # Read-only reconciliation dashboard
-│   ├── notifications.py           # Break and failure notifications
-│   ├── security.py                # Credentials and file permissions
-│   ├── smoke.py                   # Offline release-readiness checks
-│   ├── api/                       # Authenticated read-only FastAPI service
-│   ├── ingestion/                 # Provider adapters and normalization
-│   │   ├── alpaca_equities.py
-│   │   ├── alpaca_options.py
-│   │   ├── massive.py             # Shared auth, quota, retry, pagination
-│   │   ├── massive_equities.py
-│   │   ├── massive_options.py
-│   │   ├── massive_futures.py
-│   │   ├── providers.py           # Canonical provider adapter contract
-│   │   ├── yahoo_equities.py
-│   │   ├── yahoo_options.py
-│   │   └── futures.py
-│   ├── scaling/                   # Stable partitions and bounded execution
-│   ├── reconciliation/            # Comparison rules and exceptions
-│   │   ├── equities.py
-│   │   ├── options.py
-│   │   └── exceptions.py
-│   ├── storage/                   # Durable local data interfaces
-│   │   ├── duckdb.py
-│   │   ├── data_lake.py
-│   │   ├── partitioned_data_lake.py
-│   │   ├── snapshot.py            # Atomic read-only API publication
-│   │   └── retention.py
-│   └── realtime/                  # ZeroMQ publish/subscribe path
-│       ├── anomaly_scorer.py       # Explainable real-time anomaly scoring
-│       ├── publisher.py
-│       └── subscriber.py
-├── dbt/                           # Versioned DuckDB SQL transformations
-│   ├── models/
-│   └── tests/
-├── tests/                         # Offline unit and integration tests
-├── benchmarks/                    # Workloads, raw results, and charts
-├── .github/workflows/             # Automated release gates
-├── docs/                          # Architecture, operations, and security
-│   └── RUNBOOK.md                 # End-to-end operator and release runbook
-├── orchestration/                 # Deployment and future scheduling
-│   └── docker/                    # Batch image and Compose definition
-├── project.env.example            # Safe configuration template
-├── pyproject.toml                 # Python project and dependencies
-└── README.md
+├── reconciliation_engine/   # Batch, options, API, storage, real-time paths
+├── dbt/                     # DuckDB staging and reconciliation models
+├── tests/                   # Offline unit and integration evidence
+├── benchmarks/              # Workloads, raw results, and labeled charts
+├── orchestration/docker/    # Non-root batch image and persistent volume
+└── docs/                    # Runbook, support matrix, ADRs, case study
 ```
 
-Application code belongs inside `reconciliation_engine/`; SQL transformations
-belong inside `dbt/`; automated checks belong inside `tests/`; and operational
-guidance belongs inside `docs/`. Runtime databases, Parquet data, logs, virtual
-environments, and generated dbt artifacts stay local through `.gitignore`.
-See [Codebase Organization](docs/CODEBASE_ORGANIZATION.md) for the placement
-rules used throughout the project.
+See [Codebase Organization](docs/CODEBASE_ORGANIZATION.md) for ownership and
+placement rules.
 
-## Options Data Availability
+## Limitations and Roadmap
 
-Run and persist one Yahoo/Alpaca expiration with a deterministic logical ID:
+- In-memory reconciliation used about **1.07 GB RSS at 1M rows per source**;
+  5M–10M requires a future chunked or SQL path.
+- Options persistence is offline-tested, not live-provider verified.
+- Futures remain library-only; persisted futures controls are planned.
+- DuckDB snapshots are a single-node design, not a distributed serving tier.
+- ZeroMQ is a simulated local demonstration without durable delivery.
+- Docker and the external telemetry stack were not runnable on the evidence host.
+- Airflow, managed secrets, RBAC, TLS, backups, and immutable access auditing
+  remain future deployment capabilities.
+- Provider entitlements and redistribution licensing remain operator concerns.
 
-```sh
-python -m reconciliation_engine.options_batch AAPL 2026-12-18 \
-  --control-date 2026-10-13 --db reconciliation.duckdb
-```
+## Documentation
 
-Repeating the same underlying, expiration, and control date adds no rows.
+| Document | Purpose |
+| --- | --- |
+| [Feature Support](docs/FEATURE_SUPPORT.md) | Canonical implemented, verified, library-only, and planned boundary |
+| [Engineering Case Study](docs/ENGINEERING_CASE_STUDY.md) | Problem, architecture, trade-offs, evidence, and limitations |
+| [Architecture Decisions](docs/adr/README.md) | Why DuckDB, Parquet, deterministic IDs, snapshots, ZeroMQ, and bounded workers |
+| [Operator Runbook](docs/RUNBOOK.md) | Configuration, live commands, recovery, Docker, scheduling, and audit queries |
+| [Current System and Roadmap](docs/SYSTEM_DESIGN_WORKFLOW.md) | Separate current and future architecture diagrams |
+| [Release Evidence](docs/RELEASE_EVIDENCE.md) | Live and offline verification claims |
+| [v1.0.0 Release Notes](docs/RELEASE_NOTES_V1.0.0.md) | Version scope and intended tag procedure |
 
-Comparable option contracts may be unavailable because of account entitlements, subscription level, expiration, or provider coverage. The project does not replace missing observations with another provider's values or synthetic prices and does not report an unavailable comparison as a `MATCH`.
-
-When one provider returns no option contracts, every contract from an available provider is retained as a pair-specific `BREAK`. A provider pair returns no rows only when both sides are empty. Offline fixtures prove matched, price-break, missing-contract, snapshot-date, and duplicate-contract behavior independently of vendor access.
-
-Massive adds option contract discovery and EOD aggregate bars. On the free
-plan, quote, open-interest, IV, and Greek fields are not substituted with zeros
-or inferred values; they remain unavailable. Massive also adds expiring
-futures-contract and session-bar ingestion. Because Yahoo exposes continuous
-futures while Massive exposes specific contracts, a configured roll mapping is
-required before those records can become a valid reconciliation pair.
-
-## Planned Next Steps
-
-- Add persisted futures quality reporting with explicit continuous-to-expiring contract roll mappings
-- Add an idempotent Airflow DAG with documented task-log inspection
-- Extend Parquet/dbt coverage to options and derivative controls
-- Add exception aging and owner/SLA analytics
-- Replace local secret files with a managed secret store for deployment
-
-For setup, normal operation, failure scenarios, audit queries, real-time demos,
-Docker, and release verification, follow [docs/RUNBOOK.md](docs/RUNBOOK.md).
+Released under the [MIT License](LICENSE).

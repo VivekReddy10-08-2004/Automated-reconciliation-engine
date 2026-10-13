@@ -1,16 +1,51 @@
-# Automated Reconciliation Engine: System Design and Workflow
+# Automated Reconciliation Engine: Current System and Roadmap
 
-This document translates the Task 1–21 specifications in `local_docs/` into an end-state architecture, an operational workflow, and an implementation dependency map.
+This document contains two deliberately separate views:
+
+1. the components that exist in release `v1.0.0`; and
+2. the target architecture and Task 1–21 roadmap.
+
+Boxes in the target diagrams are not claims of current operation. The canonical
+verification boundary is the [Feature Support Matrix](FEATURE_SUPPORT.md).
 
 Tasks 1–9, 11–17, and 20 represent the implemented local equity-control and
-simulated real-time release. Task 19's batch container is implemented but still
-awaits verification on a Docker host. Task 21 now provides the runbook, offline
-smoke command, and documentation audit, but the full architecture release
-remains gated by the planned derivative controls in Task 10 and Airflow DAG in
-Task 18. Security is an end-to-end acceptance condition rather than a single
-isolated task.
+simulated real-time release. The options persistence command is implemented and
+offline-tested, while live options execution is unverified. Task 19's batch
+container contract is implemented but awaits a Docker host. Task 10 futures
+persistence and Task 18 Airflow orchestration remain planned. Managed secrets,
+RBAC, TLS, and backup controls are shared-deployment targets, not local-runtime
+features.
 
-## 1. End-State System Architecture
+## 1. Current v1.0.0 Architecture
+
+```mermaid
+flowchart LR
+    providers["Yahoo + Alpaca + Massive"] --> ingestion["Validated partitioned ingestion"]
+    ingestion --> parquet["Immutable Parquet checkpoints"]
+    ingestion --> equity["Three-provider equity reconciliation"]
+    options["Yahoo + Alpaca option chains"] --> optionControl["Persisted option reconciliation\noffline verified"]
+    equity --> duckdb["Atomic DuckDB control state"]
+    optionControl --> duckdb
+    duckdb --> dbt["dbt equity facts"]
+    duckdb --> snapshot["Atomic read-only snapshot"]
+    snapshot --> api["Authenticated export API"]
+    duckdb --> dashboard["Read-only dashboard"]
+    simulator["Simulated ticks"] --> zeromq["ZeroMQ"]
+    zeromq --> scorer["Explainable anomaly scorer"]
+    scorer --> dashboard
+    ingestion & equity & api --> telemetry["OpenTelemetry instrumentation\noffline verified"]
+    scheduler["cron / Windows Task Scheduler"] --> ingestion
+```
+
+Current exclusions are equally important: no Airflow DAG, no persisted futures
+workflow, no live-verified options evidence, no verified Docker execution, and
+no verified external telemetry backend.
+
+## 2. Future Target Architecture
+
+The following is a roadmap diagram. Airflow, managed secrets, RBAC, TLS,
+encrypted backups, cross-instrument dashboards, and immutable access auditing
+are future deployment capabilities unless the support matrix says otherwise.
 
 ```mermaid
 flowchart LR
@@ -114,7 +149,10 @@ flowchart LR
     liveDashboard -->|"Demo evidence"| runbook
 ```
 
-## 2. Daily Batch and Real-Time Workflow
+## 3. Future End-State Batch and Real-Time Workflow
+
+This workflow intentionally includes planned cross-instrument and failure-state
+behavior. It is not the runbook for the current release.
 
 ```mermaid
 flowchart TD
@@ -162,7 +200,7 @@ flowchart TD
     realtimePanel --> controlRoom
 ```
 
-## 3. Task 1–21 Dependency Roadmap
+## 4. Task 1–21 Dependency Roadmap
 
 ```mermaid
 flowchart LR
@@ -210,7 +248,7 @@ flowchart LR
     class task10,task18 planned
 ```
 
-Green nodes are implemented, including offline option reconciliation, local
+Green nodes are implemented, including persisted offline-verified option reconciliation, local
 notification/scheduling, the DuckDB break-analytics slice of Task 12, the
 equity Parquet and dbt layers, the simulated ZeroMQ feed, the explainable
 anomaly scorer, and the fault-isolated dashboard. Task 19 is amber until its
@@ -218,7 +256,7 @@ batch image is built and run on a Docker host. Task 21 is amber because its
 release verification assets are implemented while Tasks 10 and 18 still gate a
 literal full-architecture release. Purple nodes remain on the roadmap.
 
-## 4. Core Data Contracts
+## 5. Core Data Contracts
 
 | Domain | Canonical identity | Main control outcome |
 | --- | --- | --- |
@@ -227,7 +265,7 @@ literal full-architecture release. Purple nodes remain on the roadmap.
 | Future | `symbol, trade_date` | data-quality `PASS` or `BREAK` |
 | Real-time tick | `symbol, exchange_timestamp` | normal or explained anomaly |
 
-## 5. Dashboard and Security Acceptance Criteria
+## 6. Dashboard and Security Acceptance Criteria
 
 | Capability | Local MVP | Shared deployment target |
 | --- | --- | --- |

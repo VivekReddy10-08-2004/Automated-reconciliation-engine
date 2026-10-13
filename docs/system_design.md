@@ -1,6 +1,11 @@
 # System Design & Workflow
 
-This document outlines the architecture, data flow, and release boundary for the **Automated Financial Reconciliation Engine**. The repository contains a persisted equity batch control and an independent, simulated real-time demonstration.
+This document describes the current architecture and release boundary for the
+**Automated Financial Reconciliation Engine**. The repository contains a
+live-verified persisted equity control, an offline-verified persisted
+Yahoo/Alpaca options control, and an independent simulated real-time
+demonstration. Future deployment capabilities are labeled explicitly. See the
+[Feature Support Matrix](FEATURE_SUPPORT.md) for the canonical evidence boundary.
 
 ---
 
@@ -16,13 +21,14 @@ The system is a local Python application with independently runnable batch, real
 5. **Module B (Storage Data Lakehouse):** Writes Parquet files and queries via DuckDB.
 6. **Module D (Watchdog):** The alerting system.
 7. **Module G (CLI Control-Room Dashboard):** An implemented read-only `rich` dashboard combining DuckDB reconciliation state with a ZeroMQ anomaly feed (see Section 5).
-8. **Module O (Orchestration, planned):** No Apache Airflow DAG is included yet; Windows Task Scheduler and Ubuntu cron are documented.
-9. **Infrastructure (Docker):** Docker Compose packages only the one-shot batch runner with persistent state.
-10. **Security Control Plane:** Secrets, access roles, encryption, retention, masking, and audit events apply across every module.
+8. **Module O (Orchestration, planned):** No Apache Airflow DAG is included; Windows Task Scheduler and Ubuntu cron are documented.
+9. **Infrastructure (Docker, contract verified):** Docker Compose defines the one-shot equity batch runner with persistent state, but image execution was unavailable on the evidence host.
+10. **Security controls:** Owner-only local secrets and database files are implemented. Managed secrets, RBAC, TLS, backups, and immutable access auditing are future deployment controls.
 11. **Read-Only Export API:** FastAPI serves authenticated, filtered run,
     reconciliation, exception, and export views through bounded DuckDB readers.
-12. **Observability Plane:** OpenTelemetry exports traces and bounded-cardinality
-    metrics through an OTLP Collector; aggregate rules deliver operational alerts.
+12. **Observability Plane:** OpenTelemetry signal production and aggregate alert
+    rules are offline-tested. The optional Collector and backend stack were not
+    runtime-verified on the evidence host.
 
 ---
 
@@ -41,7 +47,13 @@ The supported derivatives are equity options and futures:
 | Options | Alpaca + yfinance + Massive | Massive free access supplies contracts and aggregates, not quote/Greek/open-interest parity. |
 | Futures | yfinance + Massive | Yahoo supplies continuous OHLCV; Massive supplies expiring contracts and exchange session bars. Alpaca has no futures feed. |
 
-The persisted equity batch compares all three provider pairs and records provider lineage in DuckDB, Parquet, dbt, exceptions, and the dashboard. Options support three-provider pairwise comparison in Python. Futures support Yahoo/Massive comparison only with an explicit continuous-to-expiring contract roll mapping. Persisted derivative batch orchestration remains the next boundary. See [Data Sources](../DATA_SOURCES.md) for exact provenance and limitations.
+The persisted equity batch compares all three provider pairs and records
+provider lineage in DuckDB, Parquet, dbt, exceptions, and the dashboard.
+Options support three-provider pairwise comparison in Python; the persisted
+command currently controls Yahoo against Alpaca and is offline-verified only.
+Futures support Yahoo/Massive comparison with an explicit
+continuous-to-expiring contract roll mapping, but no persisted futures command
+exists. See [Data Sources](../DATA_SOURCES.md) for provenance and limitations.
 
 ---
 

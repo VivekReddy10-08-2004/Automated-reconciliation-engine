@@ -10,7 +10,6 @@ SQLAlchemy
 requests
 duckdb
 dbt-duckdb
-apache-airflow
 rich
 fastapi
 uvicorn

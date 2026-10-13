@@ -1,8 +1,15 @@
 # Reconciliation Engine Runbook
 
-This runbook covers the runnable Yahoo/Alpaca/Massive equity batch control, DuckDB and Parquet audit trail, dbt equity models, webhook notifications, simulated ZeroMQ feed, anomaly scorer, read-only dashboard, local scheduling, and the batch Docker image.
+This runbook covers the live-verified Yahoo/Alpaca/Massive equity batch, the
+offline-verified persisted Yahoo/Alpaca options command, DuckDB and Parquet
+audit paths, dbt equity models, notifications, the simulated ZeroMQ path,
+dashboard, local scheduling, and the batch Docker contract.
 
-Option and futures ingestion and reconciliation libraries are present, while their persisted batch orchestration remains planned. The supported scheduler is currently Windows Task Scheduler or Ubuntu cron.
+Options persistence is implemented and offline-tested but has not been
+live-provider verified. Futures remain library-only. Airflow is planned; the
+supported scheduler is Windows Task Scheduler or cron. See the
+[Feature Support Matrix](FEATURE_SUPPORT.md) before treating any component as
+deployment-ready.
 
 ## 1. Runtime configuration
 
@@ -99,6 +106,28 @@ Build and test the SQL transformation layer:
 ```sh
 dbt build --project-dir dbt --profiles-dir dbt
 ```
+
+### Run the offline-verified options control
+
+Select an expiration that both accounts are entitled to access:
+
+```sh
+python -m reconciliation_engine.options_batch AAPL 2026-12-18 \
+  --control-date 2026-10-13 --db reconciliation.duckdb
+```
+
+The command fetches Yahoo and Alpaca option chains, reconciles contracts by
+underlying, expiration, strike, type, and trade date, and atomically writes
+`option_runs`, `option_contracts_staging`, and
+`option_reconciliation_results`. The logical ID is deterministic, so repeating
+the same underlying, expiration, and control date performs no additional
+database write.
+
+This path is implemented and covered by offline database integration tests. It
+has not been exercised with live provider credentials in the published release
+evidence. Empty or incomparable provider data remains an explicit break; it is
+not replaced with synthetic values. There is no persisted futures command in
+v1.0.0.
 
 ## 4. Serve reconciliation data
 
