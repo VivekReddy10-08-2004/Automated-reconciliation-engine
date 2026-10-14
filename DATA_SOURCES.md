@@ -2,6 +2,11 @@
 
 This document describes the data sources used by the reconciliation engine as it is currently implemented. It distinguishes externally supplied market data from synthetic, static, and derived inputs so that reconciliation results are interpreted correctly.
 
+Operational scope: equities use Yahoo, Alpaca, and Massive. The supported
+persisted options command uses Yahoo and Alpaca and is offline-verified only.
+Massive options and Yahoo/Massive futures are experimental library adapters,
+outside persisted workflows. See [Feature Support](docs/FEATURE_SUPPORT.md).
+
 ## Source summary
 
 | Source | Instruments and data | Access | Implementation |
@@ -52,10 +57,12 @@ bounded retries, and `Retry-After` responses are handled centrally.
 - **Equities:** per-symbol unadjusted daily aggregates are available for direct
   reconciliation. The grouped daily endpoint can acquire the entire US equity
   market for one date in one request and is the preferred broad-coverage path.
-- **Options:** contract reference data and per-contract aggregate bars are
-  normalized. The free plan does not provide the bid/ask quote, open interest,
-  IV, or Greeks required for those comparisons, so these fields remain null.
-- **Futures:** expiring contract reference and aggregate bars are normalized.
+- **Options (experimental):** standalone functions normalize contract reference
+  data and daily aggregate close/volume. The current adapter leaves bid, ask,
+  and open interest null and does not fetch IV or Greeks. These are adapter
+  limitations, not a claim about every Massive product or subscription.
+  Massive is not connected to the persisted Yahoo/Alpaca options command.
+- **Futures (experimental):** expiring contract reference and aggregate bars are normalized.
   The adapter preserves `session_end_date`, overnight `window_start`, and
   settlement price. It does not treat Yahoo continuous symbols such as `GC=F`
   as identical to an expiring Massive contract such as `GCZ6`.
@@ -79,9 +86,17 @@ The following inputs are part of the engine but are **not external market-data s
 | Reconciliation area | Inputs being compared or evaluated |
 | --- | --- |
 | Equities | Persisted pairwise control across Yahoo Finance, Alpaca IEX, and Massive. |
-| Equity options | Pairwise Yahoo, Alpaca, and Massive comparison by full contract identity; fields unavailable from a plan remain null. |
-| Futures | Yahoo continuous futures against Massive expiring contracts only when an explicit roll mapping is supplied. |
+| Equity options | Supported persisted Yahoo/Alpaca control, offline verified. Massive ingestion and three-provider helpers are experimental library capabilities; live snapshot/bar comparability is unverified. |
+| Futures | Experimental Yahoo/Massive library comparison with an explicit contract mapping. No persisted futures workflow or live verification is included. |
 | Real-time monitoring | Simulated ticks only; this is not currently a vendor-to-vendor live reconciliation |
+
+Contract identity alone does not make options observations comparable: a daily
+aggregate close and a chain's latest trade or quote need matching observation
+times and price definitions. Futures additionally require dated contract-roll
+mapping and matching exchange sessions. The futures helper compares closes;
+Massive settlement is retained separately as reference. Establish these
+comparison rules and live evidence before extending derivative ingestion or
+promoting the adapters into supported persisted workflows.
 
 ## Operational considerations
 

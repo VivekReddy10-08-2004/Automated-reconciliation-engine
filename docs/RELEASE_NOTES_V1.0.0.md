@@ -21,6 +21,8 @@ reviewed release commit after CI succeeds.
 
 - an Apache Airflow DAG or runtime;
 - persisted futures orchestration;
+- supported Massive derivatives workflows (options and futures adapters remain
+  experimental, offline-tested library capabilities);
 - shared-environment managed secrets, RBAC, TLS, or backups;
 - verified Docker or external telemetry-backend execution on the evidence host.
 

@@ -6,7 +6,9 @@ audit paths, dbt equity models, notifications, the simulated ZeroMQ path,
 dashboard, local scheduling, and the batch Docker contract.
 
 Options persistence is implemented and offline-tested but has not been
-live-provider verified. Futures remain library-only. Airflow is planned; the
+live-provider verified. Massive options and Yahoo/Massive futures remain
+experimental library capabilities outside the supported persisted workflows.
+Airflow is planned; the
 supported scheduler is Windows Task Scheduler or cron. See the
 [Feature Support Matrix](FEATURE_SUPPORT.md) before treating any component as
 deployment-ready.
@@ -129,6 +131,12 @@ evidence. Empty or incomparable provider data remains an explicit break; it is
 not replaced with synthetic values. There is no persisted futures command in
 v1.0.0.
 
+Massive is not called by this options command. Its experimental adapter provides
+contract metadata and historical aggregate bars, which require a matching price
+basis and observation time before comparison with chain snapshots. Experimental
+futures helpers similarly require contract-roll and session alignment. See
+[derivatives scope and promotion criteria](FEATURE_SUPPORT.md#derivatives-scope-and-promotion-criteria).
+
 ## 4. Serve reconciliation data
 
 Start the read-only API after the batch has completed:
@@ -242,7 +250,7 @@ Do not use `docker compose down -v` unless deleting the persisted audit state is
 
 - A one-sided Yahoo, Alpaca, or Massive equity observation is retained and classified as `BREAK`, with the missing provider and pair stored explicitly.
 - An unavailable option provider creates a `BREAK` for every contract from the available side, with an explicit missing-provider reason.
-- Futures comparisons require an explicit Yahoo-continuous to Massive-contract mapping; unmapped comparisons are rejected.
+- Experimental futures library comparisons require an explicit Yahoo-continuous to Massive-contract mapping; an empty mapping is rejected. Operators must verify the dated roll and session alignment before using a comparison. No futures batch command is supported.
 
 ## 9. Inspect the audit trail
 

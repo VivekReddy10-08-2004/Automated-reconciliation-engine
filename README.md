@@ -1,6 +1,7 @@
 # Automated Financial Data Ingestion & Reconciliation Engine
 
-A Python reconciliation engine for equities, equity options, and futures using Yahoo Finance, Alpaca, and Massive.
+A Python reconciliation engine with three-provider equity controls, a persisted
+Yahoo/Alpaca options workflow, and experimental Massive derivatives adapters.
 
 ```mermaid
 flowchart LR
@@ -28,7 +29,8 @@ flowchart LR
 
 The equity three-provider batch is live-verified. The persisted Yahoo/Alpaca
 options control and simulated real-time path are implemented and offline-tested.
-Futures are library-only, and Airflow remains planned. See the
+Massive options and Yahoo/Massive futures remain experimental library capabilities;
+they are outside the supported persisted workflows. Airflow remains planned. See the
 [Feature Support Matrix](docs/FEATURE_SUPPORT.md) for exact evidence boundaries.
 
 **Navigate:** [Support](#feature-support) · [Results](#verified-performance) ·
@@ -42,7 +44,8 @@ Futures are library-only, and Airflow remains planned. See the
 | --- | --- |
 | Three-provider equity reconciliation | **Implemented, live verified** |
 | Persisted Yahoo/Alpaca options control | **Implemented, offline verified**; live provider run not claimed |
-| Futures reconciliation | Library implemented; persisted orchestration planned |
+| Massive options adapter | **Experimental, library only**; contract metadata and historical bars; outside the persisted options workflow |
+| Yahoo/Massive futures comparison | **Experimental, library only**; contract/session alignment required; persisted orchestration planned |
 | Export API and atomic snapshots | Implemented and offline/load tested |
 | Benchmarks and crash recovery | Implemented and measured |
 | OpenTelemetry | Instrumented and offline tested; backend stack not runtime verified |
@@ -107,7 +110,7 @@ results are in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 
 ## Key Capabilities
 
-- Canonical Yahoo, Alpaca, and Massive ingestion with provider-pair lineage.
+- Canonical Yahoo, Alpaca, and Massive equity ingestion with provider-pair lineage.
 - Full-outer equity and option reconciliation with explicit missing-side breaks.
 - Immutable Parquet checkpoints, deterministic run IDs, and atomic DuckDB commits.
 - Bounded partition concurrency, provider quota control, retries, and quarantine.
@@ -262,7 +265,10 @@ placement rules.
 - In-memory reconciliation used about **1.07 GB RSS at 1M rows per source**;
   5M–10M requires a future chunked or SQL path.
 - Options persistence is offline-tested, not live-provider verified.
-- Futures remain library-only; persisted futures controls are planned.
+- Massive options and Yahoo/Massive futures adapters are experimental and offline-tested;
+  neither is part of a persisted derivatives workflow. Massive historical option
+  bars require matching observation times and price definitions before comparison
+  with chain snapshots. Futures require contract-roll and session alignment.
 - DuckDB snapshots are a single-node design, not a distributed serving tier.
 - ZeroMQ is a simulated local demonstration without durable delivery.
 - Docker and the external telemetry stack were not runnable on the evidence host.

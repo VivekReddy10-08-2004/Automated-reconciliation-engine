@@ -16,6 +16,12 @@ persistence and Task 18 Airflow orchestration remain planned. Managed secrets,
 RBAC, TLS, and backup controls are shared-deployment targets, not local-runtime
 features.
 
+The supported options workflow uses Yahoo/Alpaca. Massive options and
+Yahoo/Massive futures are experimental library capabilities outside the current
+persisted architecture. Future derivatives expansion depends on verified
+field/time/contract comparability; see the
+[promotion criteria](FEATURE_SUPPORT.md#derivatives-scope-and-promotion-criteria).
+
 ## 1. Current v1.0.0 Architecture
 
 ```mermaid
@@ -43,7 +49,8 @@ no verified external telemetry backend.
 
 ## 2. Future Target Architecture
 
-The following is a roadmap diagram. Airflow, managed secrets, RBAC, TLS,
+The following is a roadmap diagram. Massive derivatives paths are conditional
+on comparable provider observations and live evidence. Airflow, managed secrets, RBAC, TLS,
 encrypted backups, cross-instrument dashboards, and immutable access auditing
 are future deployment capabilities unless the support matrix says otherwise.
 

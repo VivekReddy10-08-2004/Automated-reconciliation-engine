@@ -99,7 +99,10 @@ See [Release Evidence](RELEASE_EVIDENCE.md) for the live equity run and
   serving platform.
 - Scheduling uses cron or Windows Task Scheduler. No Airflow DAG is included.
 - Options persistence is offline-tested but not live-provider verified.
-- Futures are library-only; persisted futures orchestration is planned.
+- Massive options and Yahoo/Massive futures are experimental library capabilities.
+  Historical option bars require matching price definitions and observation times;
+  futures require contract-roll and session alignment. Live comparability and
+  persisted integration must be demonstrated before promoting these adapters.
 - Telemetry exporters are offline-tested, but the reference backend stack was
   not run on the verification host because Docker was unavailable.
 - Provider entitlements and financial-data redistribution licenses remain the

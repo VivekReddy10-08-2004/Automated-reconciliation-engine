@@ -73,5 +73,6 @@ The full suite also passed two live in-process ZeroMQ integration tests: ten val
 - The same limitation prevented actual Collector/Tempo/Prometheus/Grafana execution. In-memory span/metric integration and the full telemetry unit suite passed, but backend screenshots or queries require a Docker-capable host.
 - Airflow was not exercised because no Task 18 DAG exists in the repository. It remains planned and is not described as runnable.
 - The persisted Yahoo/Alpaca options command is implemented and its atomic, idempotent DuckDB workflow is verified with offline provider fixtures. It was not exercised against live option providers, so no live options result is claimed.
-- Futures ingestion and reconciliation remain library-only and offline-tested; no persisted futures batch command is included.
+- Massive options adapters and three-provider comparison helpers are experimental and offline-tested. Massive is outside the persisted options command; no live snapshot/bar comparability is claimed.
+- Yahoo/Massive futures ingestion and reconciliation are experimental, library-only, and offline-tested; no persisted futures batch command or live contract/session comparison evidence is included.
 

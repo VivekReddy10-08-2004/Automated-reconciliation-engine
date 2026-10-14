@@ -36,24 +36,27 @@ The system is a local Python application with independently runnable batch, real
 The current integrations are:
 *   **Source A (Baseline):** `yfinance` (Yahoo Finance) for unadjusted end-of-day equity prices and **options chains** (`Ticker.option_chain()` exposes calls/puts with strike, expiry, bid/ask, implied volatility, open interest).
 *   **Source B (Cross-Reference):** Alpaca REST API for historical equities (`StockHistoricalDataClient`) and option snapshots (`OptionHistoricalDataClient` / `OptionChainRequest`). Equity batch requests explicitly use IEX; option coverage depends on account entitlement.
-*   **Source C (Broad and derivatives reference):** Massive REST for grouped/per-symbol US equity bars, option contracts and aggregates, and futures contracts and session/minute aggregates. One process-wide free-plan limiter prevents asset pipelines from competing beyond the configured request budget.
+*   **Source C:** Massive REST is integrated into the equity control. Its options contract/aggregate and futures contract/session adapters are experimental library capabilities. Requests share one process-wide quota controller.
 *   **Real-time demo input:** deterministic simulated equity ticks. No Alpaca WebSocket is connected in this release.
 
-The supported derivatives are equity options and futures:
+Instrument coverage and integration boundaries:
 
-| Instrument | Free source | Notes |
+| Instrument | Sources | Notes |
 | --- | --- | --- |
 | Equities | Alpaca + yfinance + Massive | Massive supports per-symbol comparison and one-call grouped US-market EOD acquisition. |
-| Options | Alpaca + yfinance + Massive | Massive free access supplies contracts and aggregates, not quote/Greek/open-interest parity. |
-| Futures | yfinance + Massive | Yahoo supplies continuous OHLCV; Massive supplies expiring contracts and exchange session bars. Alpaca has no futures feed. |
+| Options | Supported workflow: Alpaca + yfinance | Persisted and offline-verified. Massive contract/aggregate adapters and three-provider helpers are experimental. |
+| Futures | Experimental libraries: yfinance + Massive | Continuous versus expiring contract/session alignment is required; persisted orchestration is planned. |
 
 The persisted equity batch compares all three provider pairs and records
 provider lineage in DuckDB, Parquet, dbt, exceptions, and the dashboard.
-Options support three-provider pairwise comparison in Python; the persisted
-command currently controls Yahoo against Alpaca and is offline-verified only.
-Futures support Yahoo/Massive comparison with an explicit
-continuous-to-expiring contract roll mapping, but no persisted futures command
-exists. See [Data Sources](../DATA_SOURCES.md) for provenance and limitations.
+The supported persisted options command controls Yahoo against Alpaca and is
+offline-verified only. Massive options ingestion and three-provider comparison
+helpers are experimental: historical aggregate closes need matching observation
+times and price definitions before comparison with chain snapshots. Experimental
+Yahoo/Massive futures helpers require contract-roll and session alignment, and
+compare closes while retaining Massive settlement separately. Live comparability
+and persisted end-to-end evidence are required before promotion. See
+[Data Sources](../DATA_SOURCES.md) for provenance and limitations.
 
 ---
 
