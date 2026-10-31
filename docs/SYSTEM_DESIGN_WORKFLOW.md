@@ -9,12 +9,13 @@ Boxes in the target diagrams are not claims of current operation. The canonical
 verification boundary is the [Feature Support Matrix](FEATURE_SUPPORT.md).
 
 Tasks 1–9, 11–17, and 20 represent the implemented local equity-control and
-simulated real-time release. The options persistence command is implemented and
+simulated real-time release. ADR 0007 additionally implements offline-verified
+generic TCP/TLS and multicast JSON ingestion. The options persistence command is implemented and
 offline-tested, while live options execution is unverified. Task 19's batch
 container contract is implemented but awaits a Docker host. Task 10 futures
 persistence and Task 18 Airflow orchestration remain planned. Managed secrets,
-RBAC, TLS, and backup controls are shared-deployment targets, not local-runtime
-features.
+RBAC, application/API TLS, and backup controls are shared-deployment targets.
+The network adapter's authenticated TLS client is an implemented local capability.
 
 The supported options workflow uses Yahoo/Alpaca. Massive options and
 Yahoo/Massive futures are experimental library capabilities outside the current
@@ -38,14 +39,18 @@ flowchart LR
     duckdb --> dashboard["Read-only dashboard"]
     simulator["Simulated ticks"] --> zeromq["ZeroMQ"]
     zeromq --> scorer["Explainable anomaly scorer"]
+    network["TCP/TLS or multicast JSON"] --> marketEvent["MarketEvent + stream sequence control\noffline verified"]
+    scorer --> journal["Persistent event journal"]
+    marketEvent --> journal
     scorer --> dashboard
-    ingestion & equity & api --> telemetry["OpenTelemetry instrumentation\noffline verified"]
+    journal --> dashboard
+    ingestion & equity & api & marketEvent --> telemetry["OpenTelemetry instrumentation\noffline verified"]
     scheduler["cron / Windows Task Scheduler"] --> ingestion
 ```
 
 Current exclusions are equally important: no Airflow DAG, no persisted futures
-workflow, no live-verified options evidence, no verified Docker execution, and
-no verified external telemetry backend.
+workflow, no live-verified options evidence, no live vendor network feed, no
+verified Docker execution, and no verified external telemetry backend.
 
 ## 2. Future Target Architecture
 
@@ -271,6 +276,7 @@ literal full-architecture release. Purple nodes remain on the roadmap.
 | Option | `underlying, expiry, strike, option_type` | `MATCH`, `WARN`, `BREAK` |
 | Future | `symbol, trade_date` | data-quality `PASS` or `BREAK` |
 | Real-time tick | `symbol, exchange_timestamp` | normal or explained anomaly |
+| Network market event | `source, stream_id, sequence_number` | `FIRST`, `IN_ORDER`, `GAP`, `DUPLICATE`, `REORDERED` |
 
 ## 6. Dashboard and Security Acceptance Criteria
 
@@ -281,7 +287,7 @@ literal full-architecture release. Purple nodes remain on the roadmap.
 | Database access | DuckDB read-only connection | Dedicated least-privilege service identity and curated views |
 | Secrets | Git-ignored owner-only file, lazy loading | Managed secret store and rotation policy |
 | Data protection | Owner-only database file | TLS, encryption at rest, encrypted backups, retention jobs |
-| Sensitive fields | Raw staging excluded from dashboard | Role-based masking and export controls |
+| Sensitive fields | Raw payloads excluded; normalized break evidence only | Role-based masking and export controls |
 | Audit | Run and exception lineage | Immutable access, export, rule-change, and admin events |
 
 The batch and real-time paths remain intentionally independent. DuckDB or ZeroMQ can fail without forcing the other dashboard panel to stop, and the dashboard remains a read-only consumer throughout.

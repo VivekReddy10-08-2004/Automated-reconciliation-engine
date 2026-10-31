@@ -72,6 +72,7 @@ Implemented spans include:
 | `alerts.evaluate` | operational alert evaluation |
 | `alert.webhook.deliver` | alert rule and severity |
 | `realtime.tick.score` | event ID, processing sequence, sequence status, transport |
+| `network.event.process` | event/source/stream IDs, vendor sequence and status, transport, missing count |
 
 Worker tasks copy the parent context before entering the thread pool, so provider
 and partition spans remain children of the batch ingestion trace. Exceptions are
@@ -87,6 +88,12 @@ Completed batch runs persist their root trace and span identifiers. Scored
 real-time events persist their event ID and active trace/span identifiers in
 `realtime_event_journal`. The dashboard exposes those correlation keys but does
 not ingest logs or contact the telemetry backend itself.
+
+TCP/TLS and multicast adapters also emit structured lifecycle events for
+connect, disconnect, reconnect, multicast join/leave, datagram receipt, and
+normalized market-event processing. Hostnames, IP addresses, ports, bounded
+error types, event identifiers, and sequence metadata may appear in controlled
+logs; raw packet and market-event payloads do not appear in metric labels.
 
 | Metric | Type | Dimensions |
 | --- | --- | --- |

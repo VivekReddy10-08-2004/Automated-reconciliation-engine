@@ -12,6 +12,7 @@ than silently rewritten.
 | [0004](0004-atomic-serving-snapshots.md) | Separate writers and API readers with atomic snapshots |
 | [0005](0005-zeromq-for-local-realtime-demo.md) | Use ZeroMQ for the local real-time demonstration |
 | [0006](0006-bounded-partition-concurrency.md) | Bound provider-partition concurrency |
+| [0007](0007-tcp-and-multicast-transports.md) | Normalize TCP/TLS and multicast feeds behind one market-event contract |
 
 Status values follow the lightweight convention `Accepted`, `Superseded`, or
 `Deprecated`.

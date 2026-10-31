@@ -27,6 +27,11 @@ For concurrent serving, a completed DuckDB catalog is atomically published as a
 read-only snapshot. A separate simulated ZeroMQ path demonstrates tick latency,
 explainable anomaly scoring, and dashboard failure isolation.
 
+Generic TCP/TLS and IPv4 multicast adapters normalize framed JSON into a shared
+`MarketEvent`, classify vendor sequences per feed stream, and append correlated
+evidence to the event journal. Local-socket tests verify transport behavior; no
+vendor-specific login, entitlement, or live feed is claimed.
+
 The exact implemented/planned boundary is maintained in the
 [Feature Support Matrix](FEATURE_SUPPORT.md).
 
@@ -69,6 +74,8 @@ then flattened, demonstrating why concurrency is capped rather than maximized.
 - **Deterministic IDs:** database-enforced idempotency across retries.
 - **Stable partitions:** predictable concurrency, checkpointing, and failure
   isolation under provider quotas.
+- **Transport-independent market events:** one strict downstream contract for
+  newline/length-framed TCP, authenticated TLS, and multicast datagrams.
 
 The detailed trade-offs and revisit conditions are recorded in
 [Architecture Decision Records](adr/README.md).
@@ -105,5 +112,8 @@ See [Release Evidence](RELEASE_EVIDENCE.md) for the live equity run and
   persisted integration must be demonstrated before promoting these adapters.
 - Telemetry exporters are offline-tested, but the reference backend stack was
   not run on the verification host because Docker was unavailable.
+- Network adapters are generic JSON transports verified offline. Vendor login,
+  subscription, binary protocols, redundant-feed arbitration, and durable
+  sequence recovery remain integration work.
 - Provider entitlements and financial-data redistribution licenses remain the
   operator's responsibility.

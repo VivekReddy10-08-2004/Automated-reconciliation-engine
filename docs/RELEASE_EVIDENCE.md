@@ -1,6 +1,6 @@
 # Release Verification Evidence
 
-Verification was refreshed on October 13, 2026 from the repository root.
+Verification was refreshed on October 31, 2026 from the repository root.
 
 This document records evidence, not merely implemented code. The canonical
 current/planned boundary is the [Feature Support Matrix](FEATURE_SUPPORT.md).
@@ -9,8 +9,8 @@ current/planned boundary is the [Feature Support Matrix](FEATURE_SUPPORT.md).
 
 | Check | Result |
 | --- | --- |
-| `python -m reconciliation_engine.smoke` | Passed: 26 imports, configuration, credentials, two local endpoints, and seven DuckDB tables; no market-data request |
-| `python -m unittest discover -s tests -v` | Passed: 112 tests |
+| Smoke import/schema coverage | Passed in the full suite: 27 release modules and eight required DuckDB tables; no market-data request |
+| `python -m unittest discover -s tests -v` | Passed: 128 tests before the table-output addition; the affected transport suite then passed 14/14 |
 | `dbt build --project-dir dbt --profiles-dir dbt` | Passed: 23 models/tests, 0 warnings, 0 errors |
 | `git diff --check` | Passed |
 | Tracked secret/runtime filename check | Passed; only the intentionally tracked `project.env.example` template matched the initial broad search |
@@ -66,6 +66,25 @@ The Task 20 captures remain valid release evidence for the read-only control roo
 - [Real-time unavailable while batch remains available](dashboard_demos/realtime-unavailable.svg)
 
 The full suite also passed two live in-process ZeroMQ integration tests: ten valid simulated ticks, and scorer republication of an explained anomaly.
+
+## Network transport evidence
+
+Fourteen deterministic ADR 0007 tests passed using local socket pairs, injected
+multicast sockets, and temporary DuckDB state. They cover:
+
+- newline-delimited and four-byte network-order length-prefixed TCP frames;
+- buffered consecutive frames, bounded frame size, disconnect, and reconnect;
+- TLS context wrapping with server-hostname verification configuration;
+- IPv4 multicast address validation, group join, datagram receive, and leave;
+- common `MarketEvent` validation and deterministic event identity;
+- per-stream `FIRST`, `IN_ORDER`, `GAP`, `DUPLICATE`, and `REORDERED` analysis;
+- idempotent event journaling with expected/missing sequence evidence;
+- narrow TCP and multicast packet-capture filter/command generation; and
+- bounded dataframe-style live-table rendering and JSON output compatibility.
+
+This is offline transport evidence. No external vendor endpoint, authentication
+handshake, entitlement, subscription message, binary protocol, or live
+multicast network was exercised.
 
 ## Environment limitations
 

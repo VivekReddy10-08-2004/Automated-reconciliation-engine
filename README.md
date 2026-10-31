@@ -21,6 +21,8 @@ flowchart LR
     D --> DBT[dbt facts and tests]
     D --> UI[Control-room dashboard]
 
+    N[TCP/TLS or multicast JSON events] --> NE[MarketEvent normalization + sequence controls]
+    NE --> J
     Z[Simulated ZeroMQ ticks] --> AS[Explainable anomaly scorer]
     AS --> J[(Append-only event journal)]
     AS --> UI
@@ -49,6 +51,7 @@ they are outside the supported persisted workflows. Airflow remains planned. See
 | Massive options adapter | **Experimental, library only**; contract metadata and historical bars; outside the persisted options workflow |
 | Yahoo/Massive futures comparison | **Experimental, library only**; contract/session alignment required; persisted orchestration planned |
 | Export API and atomic snapshots | Implemented and offline/load tested |
+| TCP/TLS and UDP multicast JSON adapters | **Implemented, offline verified**; no live vendor feed claimed |
 | Benchmarks and crash recovery | Implemented and measured |
 | OpenTelemetry | Instrumented and offline tested; backend stack not runtime verified |
 | Docker batch | Contract tested; image execution not verified on the evidence host |
@@ -120,6 +123,8 @@ results are in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 - dbt equity facts, exception SLAs, authenticated exports, and serving snapshots.
 - Analysis-ready control room with ingestion diagnostics, exception drill-downs,
   run history, repeat offenders, quarantine evidence, and persistent event traces.
+- Offline-verified TCP/TLS and UDP multicast adapters with framing, bounded
+  reconnects, stream-aware vendor sequence controls, journaling, and capture filters.
 - Trace-correlated OpenTelemetry signals and an explainable ZeroMQ anomaly demo.
 - Repeatable correctness, performance, load, fault, and crash-recovery evidence.
 
@@ -238,6 +243,11 @@ fixture procedure are in [Benchmark Evidence](benchmarks/README.md).
 
 ## Operations
 
+Load the repository-local shortcuts with
+`. scripts/reconciliation_aliases.sh`, then use `recon-tcp`,
+`recon-multicast`, `recon-dashboard`, `recon-scorer`, `recon-publisher`, or
+`recon-batch`.
+
 - **Docker:** `docker compose -f orchestration/docker/compose.yaml run --rm batch`
 - **Dashboard:** `python -m reconciliation_engine.dashboard --db reconciliation.duckdb --refresh 0.5`
 - **Investigation filters:** add `--run-id`, `--symbol`, `--provider`, or
@@ -250,6 +260,8 @@ The [operator runbook](docs/RUNBOOK.md) owns full configuration, Docker,
 ZeroMQ, scheduling, failure recovery, audit queries, and secret-handling
 instructions. See [Data Security](docs/DATA_SECURITY.md), [Observability](docs/OBSERVABILITY.md),
 and [Data Sources](DATA_SOURCES.md) for their respective contracts.
+The generic network feed wire contract and operational boundary are documented
+in [Network Transports](docs/NETWORK_TRANSPORTS.md).
 
 ## Project Structure
 
@@ -279,6 +291,9 @@ placement rules.
 - ZeroMQ remains a simulated local transport without delivery guarantees. Scored
   events are journaled idempotently in DuckDB for analysis and restart-safe
   history; this does not turn ZeroMQ itself into a durable broker.
+- TCP/TLS and multicast adapters are generic JSON transports verified with local
+  sockets. Vendor authentication, subscription protocols, binary formats,
+  entitlements, A/B arbitration, and live feed certification are not claimed.
 - Docker and the external telemetry stack were not runnable on the evidence host.
 - Airflow, managed secrets, RBAC, TLS, backups, and immutable access auditing
   remain future deployment capabilities.
@@ -290,7 +305,8 @@ placement rules.
 | --- | --- |
 | [Feature Support](docs/FEATURE_SUPPORT.md) | Canonical implemented, verified, library-only, and planned boundary |
 | [Engineering Case Study](docs/ENGINEERING_CASE_STUDY.md) | Problem, architecture, trade-offs, evidence, and limitations |
-| [Architecture Decisions](docs/adr/README.md) | Why DuckDB, Parquet, deterministic IDs, snapshots, ZeroMQ, and bounded workers |
+| [Architecture Decisions](docs/adr/README.md) | Why DuckDB, Parquet, deterministic IDs, snapshots, ZeroMQ, network transports, and bounded workers |
+| [Network Transports](docs/NETWORK_TRANSPORTS.md) | TCP/TLS and multicast wire contract, monitoring, sequence analysis, and packet capture |
 | [Operator Runbook](docs/RUNBOOK.md) | Configuration, live commands, recovery, Docker, scheduling, and audit queries |
 | [Current System and Roadmap](docs/SYSTEM_DESIGN_WORKFLOW.md) | Separate current and future architecture diagrams |
 | [Release Evidence](docs/RELEASE_EVIDENCE.md) | Live and offline verification claims |

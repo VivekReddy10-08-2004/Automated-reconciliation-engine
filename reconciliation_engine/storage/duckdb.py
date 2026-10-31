@@ -326,6 +326,13 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
                 sequence_number BIGINT NOT NULL,
                 sequence_status VARCHAR NOT NULL,
                 transport VARCHAR NOT NULL,
+                source VARCHAR,
+                stream_id VARCHAR,
+                event_type VARCHAR,
+                quantity DOUBLE,
+                correlation_id VARCHAR,
+                expected_sequence BIGINT,
+                missing_count BIGINT DEFAULT 0,
                 symbol VARCHAR NOT NULL,
                 price DOUBLE NOT NULL,
                 exchange_timestamp TIMESTAMP NOT NULL,
@@ -340,6 +347,19 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
             )
             """
         )
+        for definition in (
+            "source VARCHAR",
+            "stream_id VARCHAR",
+            "event_type VARCHAR",
+            "quantity DOUBLE",
+            "correlation_id VARCHAR",
+            "expected_sequence BIGINT",
+            "missing_count BIGINT DEFAULT 0",
+        ):
+            conn.execute(
+                f"ALTER TABLE realtime_event_journal "
+                f"ADD COLUMN IF NOT EXISTS {definition}"
+            )
     restrict_file_permissions(db_path)
 
 
@@ -850,8 +870,14 @@ def persist_realtime_event(
             return False
         conn.execute(
             """
-            INSERT INTO realtime_event_journal VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            INSERT INTO realtime_event_journal (
+                event_id, sequence_number, sequence_status, transport,
+                source, stream_id, event_type, quantity, correlation_id,
+                expected_sequence, missing_count, symbol, price,
+                exchange_timestamp, received_timestamp, latency_ms,
+                pct_change, is_anomaly, reason, trace_id, span_id, recorded_at
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             [
@@ -859,6 +885,13 @@ def persist_realtime_event(
                 event["sequence_number"],
                 event["sequence_status"],
                 event["transport"],
+                event.get("source"),
+                event.get("stream_id"),
+                event.get("event_type"),
+                event.get("quantity"),
+                event.get("correlation_id"),
+                event.get("expected_sequence"),
+                event.get("missing_count", 0),
                 event["symbol"],
                 event["price"],
                 event["exchange_timestamp"],

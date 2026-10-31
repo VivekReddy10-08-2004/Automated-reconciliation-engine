@@ -22,8 +22,11 @@ output, not only to network encryption.
   exclude credentials, request headers, SQL text, raw payloads, and export rows.
   Alert logs contain stable fingerprints and aggregate counts, never webhook
   URLs or secret values.
-- Raw market-data staging is excluded from the dashboard to reduce unnecessary
-  exposure.
+- Raw provider payload archives are excluded from the dashboard. Investigators
+  see only normalized OHLCV evidence needed to explain a selected break.
+- The TCP adapter supports authenticated TLS with hostname verification and has
+  no insecure CLI bypass. Packet-capture helpers only construct narrow commands;
+  the application never elevates privileges or executes `tcpdump`.
 
 The corresponding implementation lives in `reconciliation_engine/security.py`,
 the provider ingestion package, `reconciliation_engine/storage/duckdb.py`, and
@@ -39,6 +42,7 @@ also needs the controls below.
 | --- | --- | --- |
 | Secrets | Store keys in a secrets manager; rotate on exposure and on schedule | Rotation log and secret-access audit |
 | Transport | TLS for provider APIs, alerts, dashboard access, and service-to-service traffic | TLS configuration and certificate monitoring |
+| Packet capture | Restrict capture capability, encrypt captures, minimize retention, and treat payloads as licensed market data | Capability review and capture deletion log |
 | Storage | Encrypt databases, Parquet archives, backups, and persistent volumes | Encryption configuration and restore test |
 | Access | Service identities and role-based access for operator, investigator, and administrator roles | Quarterly access review |
 | Data minimization | Keep only fields needed for reconciliation; mask counterparties and account identifiers in views and alerts | Approved field inventory |
@@ -85,3 +89,7 @@ build logs. Changing the local file alone does not invalidate a copied key.
 After rotation, verify the old key is rejected, the new key can perform only the
 required read operations, and no plaintext secret appears in shell history,
 logs, screenshots, alerts, or committed files.
+
+For a packet-capture incident, stop capture as soon as the required interval is
+collected, restrict the `.pcap` to assigned investigators, record its purpose and
+retention deadline, and delete it through the approved evidence process.

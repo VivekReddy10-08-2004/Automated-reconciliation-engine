@@ -179,6 +179,40 @@ contract.
 
 ## 6. Run the real-time demonstration
 
+### Load short command aliases
+
+From the repository root, load the project-local shortcuts once per shell:
+
+```sh
+. scripts/reconciliation_aliases.sh
+```
+
+The main commands then become:
+
+```sh
+recon-tcp
+recon-multicast
+recon-dashboard
+recon-scorer
+recon-publisher
+recon-batch --symbol AAPL
+recon-help
+```
+
+Defaults can be overridden for one command without editing the alias file:
+
+```sh
+RECON_TCP_HOST=192.0.2.20 RECON_TCP_PORT=9100 recon-tcp --count 25
+RECON_MULTICAST_INTERFACE=192.0.2.25 recon-multicast
+RECON_DB=state/demo.duckdb recon-dashboard
+```
+
+Extra CLI arguments are forwarded, so `recon-tcp --tls`,
+`recon-tcp --output-format json`, and `recon-dashboard --symbol AAPL` work as
+expected. To load the shortcuts automatically, add an absolute `source` line
+for `scripts/reconciliation_aliases.sh` to the startup file for the shell you
+actually use (for example `~/.bashrc`).
+
 Open three terminals in the repository root. Start the scorer first:
 
 ```sh
@@ -224,6 +258,41 @@ classifications; the local simulated publisher normally produces only `FIRST`
 and `IN_ORDER`.
 
 Reference captures for both healthy and degraded modes are in [Dashboard demonstrations](DASHBOARD_DEMO.md).
+
+### Monitor TCP/TLS or multicast market events
+
+The generic network adapters accept the JSON `MarketEvent` contract documented
+in [Network Transports](NETWORK_TRANSPORTS.md). Example newline-framed TCP:
+
+```sh
+python -m reconciliation_engine.realtime.network_transport tcp \
+  127.0.0.1 9000 --framing newline --count 100 \
+  --db reconciliation.duckdb
+```
+
+The default output is a live dataframe-style table retaining the latest 20
+events. Use `--table-rows 50` for a larger window or `--output-format json` for
+newline-delimited machine output.
+
+Example multicast:
+
+```sh
+python -m reconciliation_engine.realtime.network_transport multicast \
+  239.10.10.10 5000 --interface 192.0.2.25 \
+  --count 100 --db reconciliation.duckdb
+```
+
+Use `--tls` for an authenticated TLS client connection. Do not treat offline
+adapter tests as evidence that a vendor's authentication, subscription,
+entitlement, or binary protocol is supported.
+
+Generate—but do not execute—a reviewed packet-capture command:
+
+```sh
+python -m reconciliation_engine.realtime.network_transport capture-command \
+  multicast 239.10.10.10 5000 \
+  --interface eth0 --output captures/feed.pcap
+```
 
 ## 7. Run with Docker
 

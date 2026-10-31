@@ -365,8 +365,10 @@ def load_dashboard_data(
         if "realtime_event_journal" in table_names:
             recent_events = conn.execute(
                 """
-                SELECT event_id, sequence_number, sequence_status, transport,
-                       symbol, price, exchange_timestamp, latency_ms,
+                SELECT event_id, source, stream_id, event_type, sequence_number,
+                       sequence_status, expected_sequence, missing_count, transport,
+                       symbol, price, quantity, correlation_id,
+                       exchange_timestamp, latency_ms,
                        is_anomaly, reason, trace_id, span_id
                 FROM realtime_event_journal
                 ORDER BY recorded_at DESC
@@ -742,11 +744,18 @@ def _render_analysis_panel(state: BatchDashboardState) -> Panel:
         data.recent_events.head(5),
         [
             ("event_id", "Event ID"),
+            ("source", "Source"),
+            ("stream_id", "Stream"),
+            ("event_type", "Type"),
             ("sequence_number", "Seq"),
             ("sequence_status", "Order"),
+            ("expected_sequence", "Expected"),
+            ("missing_count", "Missing"),
             ("transport", "Transport"),
             ("symbol", "Symbol"),
             ("price", "Price"),
+            ("quantity", "Quantity"),
+            ("correlation_id", "Correlation ID"),
             ("exchange_timestamp", "Exchange time"),
             ("latency_ms", "Latency ms"),
             ("is_anomaly", "Anomaly"),

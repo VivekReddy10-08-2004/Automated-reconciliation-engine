@@ -47,6 +47,7 @@ REQUIRED_MODULES = (
     "reconciliation_engine.reconciliation.futures",
     "reconciliation_engine.realtime.publisher",
     "reconciliation_engine.realtime.anomaly_scorer",
+    "reconciliation_engine.realtime.network_transport",
     "reconciliation_engine.observability",
     "reconciliation_engine.scaling.partitions",
     "reconciliation_engine.scaling.equity_ingestion",
@@ -64,6 +65,7 @@ REQUIRED_TABLES = {
     "work_partitions",
     "provider_request_metrics",
     "quarantine_records",
+    "realtime_event_journal",
 }
 
 

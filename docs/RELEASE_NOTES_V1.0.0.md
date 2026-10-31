@@ -13,6 +13,8 @@ reviewed release commit after CI succeeds.
 - dbt equity facts and data tests;
 - authenticated exports and atomic read-only snapshots;
 - simulated ZeroMQ anomaly demonstration;
+- offline-verified generic TCP/TLS and IPv4 multicast JSON transports with a
+  common market-event contract and vendor-sequence controls;
 - OpenTelemetry instrumentation and operational alerts;
 - correctness, performance, load, crash-recovery, and fault evidence; and
 - automated release gates.
@@ -24,7 +26,9 @@ reviewed release commit after CI succeeds.
 - supported Massive derivatives workflows (options and futures adapters remain
   experimental, offline-tested library capabilities);
 - shared-environment managed secrets, RBAC, TLS, or backups;
-- verified Docker or external telemetry-backend execution on the evidence host.
+- verified Docker or external telemetry-backend execution on the evidence host;
+- live vendor TCP/multicast authentication, entitlement, subscription, binary
+  protocol, or feed-certification evidence.
 
 See [Feature Support](FEATURE_SUPPORT.md) for verification levels and
 [Release Evidence](RELEASE_EVIDENCE.md) for measured claims.

@@ -8,7 +8,7 @@ existing domain package instead of adding new root-level modules.
 | Provider ingestion and normalization | `reconciliation_engine/ingestion/` |
 | Reconciliation rules and exceptions | `reconciliation_engine/reconciliation/` |
 | DuckDB and Parquet access | `reconciliation_engine/storage/` |
-| ZeroMQ and live consumers | `reconciliation_engine/realtime/` |
+| ZeroMQ, TCP/TLS, multicast, and live consumers | `reconciliation_engine/realtime/` |
 | Batch orchestration | `reconciliation_engine/batch.py` |
 | Read-only operator dashboard | `reconciliation_engine/dashboard.py` |
 | dbt transformations | `dbt/` |
