@@ -7,8 +7,10 @@ from collections.abc import Callable, Iterable
 import json
 import math
 import time
+from uuid import NAMESPACE_URL, uuid5
 
 import zmq
+from opentelemetry import trace
 
 from reconciliation_engine.realtime import (
     get_endpoint,
@@ -17,9 +19,26 @@ from reconciliation_engine.realtime import (
 )
 from reconciliation_engine.realtime.publisher import TICK_FIELDS
 from reconciliation_engine.realtime.subscriber import validate_tick
+from reconciliation_engine.observability import (
+    configure_telemetry,
+    get_telemetry,
+    log_event,
+)
+from reconciliation_engine.storage.duckdb import (
+    initialize_database,
+    persist_realtime_event,
+)
 
 
-ANNOTATION_FIELDS = ("pct_change", "is_anomaly", "reason")
+ANNOTATION_FIELDS = (
+    "pct_change",
+    "is_anomaly",
+    "reason",
+    "event_id",
+    "sequence_number",
+    "sequence_status",
+    "transport",
+)
 ANNOTATED_TICK_FIELDS = (*TICK_FIELDS, *ANNOTATION_FIELDS)
 DEFAULT_THRESHOLD_PCT = 1.0
 
@@ -38,10 +57,35 @@ def score_tick(
     previous_price: float | None,
     *,
     threshold_pct: float = DEFAULT_THRESHOLD_PCT,
+    sequence_number: int = 0,
+    previous_sequence_number: int | None = None,
+    transport: str = "ZEROMQ",
 ) -> dict[str, object]:
     """Return one validated tick annotated by a transparent percentage rule."""
     valid_tick = validate_tick(tick)
     threshold = _validate_threshold(threshold_pct)
+    if isinstance(sequence_number, bool) or sequence_number < 0:
+        raise ValueError("sequence_number must be a non-negative integer")
+    if previous_sequence_number is None:
+        sequence_status = "FIRST"
+    elif sequence_number == previous_sequence_number + 1:
+        sequence_status = "IN_ORDER"
+    elif sequence_number > previous_sequence_number + 1:
+        sequence_status = "GAP"
+    elif sequence_number == previous_sequence_number:
+        sequence_status = "DUPLICATE"
+    else:
+        sequence_status = "REORDERED"
+    normalized_transport = transport.strip().upper()
+    if not normalized_transport:
+        raise ValueError("transport must be non-empty")
+    event_id = str(
+        uuid5(
+            NAMESPACE_URL,
+            f"{normalized_transport}|{valid_tick['symbol']}|"
+            f"{valid_tick['exchange_timestamp']}|{sequence_number}",
+        )
+    )
 
     if previous_price is None:
         pct_change = None
@@ -72,6 +116,10 @@ def score_tick(
         "pct_change": pct_change,
         "is_anomaly": is_anomaly,
         "reason": reason,
+        "event_id": event_id,
+        "sequence_number": sequence_number,
+        "sequence_status": sequence_status,
+        "transport": normalized_transport,
     }
 
 
@@ -97,6 +145,22 @@ def validate_annotated_tick(message: object) -> dict[str, object]:
         raise ValueError("reason must be a non-empty string")
     if message["is_anomaly"] and pct_change is None:
         raise ValueError("an anomalous tick must include pct_change")
+    if (
+        not isinstance(message["sequence_number"], int)
+        or message["sequence_number"] < 0
+    ):
+        raise ValueError("sequence_number must be a non-negative integer")
+    if message["sequence_status"] not in {
+        "FIRST",
+        "IN_ORDER",
+        "GAP",
+        "DUPLICATE",
+        "REORDERED",
+    }:
+        raise ValueError("sequence_status is invalid")
+    for field in ("event_id", "transport"):
+        if not isinstance(message[field], str) or not message[field].strip():
+            raise ValueError(f"{field} must be a non-empty string")
     return message
 
 
@@ -106,6 +170,8 @@ class RuleBasedAnomalyScorer:
     def __init__(self, threshold_pct: float = DEFAULT_THRESHOLD_PCT) -> None:
         self.threshold_pct = _validate_threshold(threshold_pct)
         self._previous_prices: dict[str, float] = {}
+        self._sequence_number = 0
+        self._previous_sequence_number: int | None = None
 
     def score(self, tick: object) -> dict[str, object]:
         valid_tick = validate_tick(tick)
@@ -114,8 +180,12 @@ class RuleBasedAnomalyScorer:
             valid_tick,
             self._previous_prices.get(symbol),
             threshold_pct=self.threshold_pct,
+            sequence_number=self._sequence_number,
+            previous_sequence_number=self._previous_sequence_number,
         )
         self._previous_prices[symbol] = float(valid_tick["price"])
+        self._previous_sequence_number = self._sequence_number
+        self._sequence_number += 1
         return annotated
 
 
@@ -153,6 +223,7 @@ def score_and_publish_ticks(
     startup_delay_seconds: float = 0.5,
     context: zmq.Context | None = None,
     output: Callable[[str], None] | None = print,
+    journal_db_path: str | None = None,
 ) -> list[dict[str, object]]:
     """Consume raw ticks and republish rule-annotated ticks."""
     validate_local_endpoint(input_endpoint)
@@ -179,15 +250,55 @@ def score_and_publish_ticks(
 
     annotated_ticks: list[dict[str, object]] = []
     processed = 0
+    if journal_db_path is not None:
+        initialize_database(journal_db_path)
     try:
         publisher.bind(output_endpoint)
         subscriber.connect(input_endpoint)
         time.sleep(startup_delay_seconds)
         while count is None or processed < count:
             try:
-                annotated = scorer.score(subscriber.recv_json())
+                with get_telemetry().span("realtime.tick.score") as span:
+                    annotated = scorer.score(subscriber.recv_json())
+                    span.set_attribute("event.id", annotated["event_id"])
+                    span.set_attribute(
+                        "event.sequence_number", annotated["sequence_number"]
+                    )
+                    span.set_attribute(
+                        "event.sequence_status", annotated["sequence_status"]
+                    )
+                    span.set_attribute("transport", annotated["transport"])
+                    context_value = trace.get_current_span().get_span_context()
+                    trace_id = (
+                        format(context_value.trace_id, "032x")
+                        if context_value.is_valid
+                        else None
+                    )
+                    span_id = (
+                        format(context_value.span_id, "016x")
+                        if context_value.is_valid
+                        else None
+                    )
+                    if journal_db_path is not None:
+                        persist_realtime_event(
+                            annotated,
+                            trace_id=trace_id,
+                            span_id=span_id,
+                            db_path=journal_db_path,
+                            initialize_schema=False,
+                        )
+                    log_event(
+                        "realtime_event_scored",
+                        event_id=annotated["event_id"],
+                        sequence_number=annotated["sequence_number"],
+                        sequence_status=annotated["sequence_status"],
+                        transport=annotated["transport"],
+                        is_anomaly=annotated["is_anomaly"],
+                    )
             except zmq.Again as error:
-                raise TimeoutError("Timed out waiting for a raw real-time tick") from error
+                raise TimeoutError(
+                    "Timed out waiting for a raw real-time tick"
+                ) from error
             publisher.send_json(annotated)
             processed += 1
             if count is not None:
@@ -221,13 +332,20 @@ def main() -> None:
         help="Number of ticks to score; 0 runs until Ctrl+C",
     )
     parser.add_argument("--timeout-ms", type=int)
+    parser.add_argument(
+        "--db",
+        default="reconciliation.duckdb",
+        help="DuckDB path for the persistent real-time event journal",
+    )
     arguments = parser.parse_args()
+    configure_telemetry(service_name="reconciliation-realtime-scorer")
     score_and_publish_ticks(
         get_endpoint(),
         get_scored_endpoint(),
         threshold_pct=arguments.threshold_pct,
         count=None if arguments.count == 0 else arguments.count,
         timeout_ms=arguments.timeout_ms,
+        journal_db_path=arguments.db,
     )
 
 

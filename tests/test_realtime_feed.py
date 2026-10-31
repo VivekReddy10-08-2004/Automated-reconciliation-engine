@@ -11,6 +11,7 @@ import zmq
 from reconciliation_engine.realtime import get_endpoint, get_scored_endpoint
 from reconciliation_engine.realtime.anomaly_scorer import (
     ANNOTATION_FIELDS,
+    score_tick,
     score_and_publish_ticks,
 )
 from reconciliation_engine.realtime.publisher import (
@@ -69,6 +70,37 @@ class RealtimeTickContractTests(unittest.TestCase):
                 receive_time + timedelta(milliseconds=1),
                 receive_time,
             )
+
+    def test_sequence_classification_supports_trace_investigation(self):
+        tick = create_tick(
+            "AAPL",
+            100,
+            datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc),
+            datetime(2026, 10, 10, 12, 0, 0, 5000, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(
+            score_tick(tick, None, sequence_number=7)["sequence_status"],
+            "FIRST",
+        )
+        self.assertEqual(
+            score_tick(tick, 100, sequence_number=9, previous_sequence_number=7)[
+                "sequence_status"
+            ],
+            "GAP",
+        )
+        self.assertEqual(
+            score_tick(tick, 100, sequence_number=7, previous_sequence_number=7)[
+                "sequence_status"
+            ],
+            "DUPLICATE",
+        )
+        self.assertEqual(
+            score_tick(tick, 100, sequence_number=6, previous_sequence_number=7)[
+                "sequence_status"
+            ],
+            "REORDERED",
+        )
 
 
 class RealtimeZeroMqIntegrationTests(unittest.TestCase):

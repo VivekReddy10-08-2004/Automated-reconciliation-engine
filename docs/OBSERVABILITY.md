@@ -71,6 +71,7 @@ Implemented spans include:
 | `reconciliation_export_completed` event | format and row count |
 | `alerts.evaluate` | operational alert evaluation |
 | `alert.webhook.deliver` | alert rule and severity |
+| `realtime.tick.score` | event ID, processing sequence, sequence status, transport |
 
 Worker tasks copy the parent context before entering the thread pool, so provider
 and partition spans remain children of the batch ingestion trace. Exceptions are
@@ -81,6 +82,11 @@ symbols, and exported rows are deliberately excluded from metric labels.
 
 All metric labels are bounded. Run IDs, partition IDs, symbols, exception IDs,
 and error messages remain in traces or controlled logs instead of metric labels.
+
+Completed batch runs persist their root trace and span identifiers. Scored
+real-time events persist their event ID and active trace/span identifiers in
+`realtime_event_journal`. The dashboard exposes those correlation keys but does
+not ingest logs or contact the telemetry backend itself.
 
 | Metric | Type | Dimensions |
 | --- | --- | --- |

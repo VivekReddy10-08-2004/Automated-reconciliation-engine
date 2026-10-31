@@ -25,6 +25,10 @@ from reconciliation_engine.dashboard import (
 )
 from reconciliation_engine.realtime.anomaly_scorer import score_tick
 from reconciliation_engine.realtime.publisher import create_tick
+from reconciliation_engine.storage.duckdb import (
+    initialize_database,
+    persist_realtime_event,
+)
 
 
 def _raw_tick(price: float) -> dict[str, str | float]:
@@ -86,6 +90,94 @@ def _render_text(
 
 
 class DashboardAnalyticsTests(unittest.TestCase):
+    def test_loads_ingestion_exception_and_event_investigation_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "reconciliation.duckdb"
+            initialize_database(str(db_path))
+            with duckdb.connect(str(db_path)) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO pipeline_runs (
+                        run_id, started_at, finished_at, status,
+                        yahoo_row_count, alpaca_row_count, massive_row_count,
+                        match_count, break_count, trace_id
+                    ) VALUES ('run-analysis', '2026-10-11', '2026-10-11',
+                              'SUCCESS_WITH_BREAKS', 1, 1, 1, 0, 1, 'batch-trace')
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO work_partitions (
+                        partition_id, run_id, control_date, instrument_type,
+                        symbol_bucket, provider, symbols_json, status, attempts,
+                        row_count
+                    ) VALUES ('partition-1', 'run-analysis', '2026-10-11',
+                              'EQUITY', 1, 'YAHOO', '["AAPL"]', 'SUCCESS', 1, 1)
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO provider_request_metrics (
+                        partition_id, run_id, provider, instrument_type,
+                        symbol_bucket, requested_symbols, returned_rows,
+                        latency_ms, reused_archive, outcome_status, recorded_at
+                    ) VALUES ('partition-1', 'run-analysis', 'YAHOO', 'EQUITY',
+                              1, 1, 1, 12.5, false, 'SUCCESS', current_timestamp)
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO equity_reconciliation_results VALUES (
+                        'run-analysis', 'AAPL', '2026-10-11', 'close',
+                        'YAHOO', 'ALPACA', 100, 101, -1, true,
+                        'BREAK', 'PRICE_DIFFERENCE'
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO equity_exceptions (
+                        exception_id, run_id, instrument_type, symbol, trade_date,
+                        source_a, source_b, source_a_close, source_b_close,
+                        close_difference, severity, priority, status, owner,
+                        reason_code, due_at, created_at
+                    ) VALUES ('exception-1', 'run-analysis', 'EQUITY', 'AAPL',
+                              '2026-10-11', 'YAHOO', 'ALPACA', 100, 101, -1,
+                              'BREAK', 'HIGH', 'OPEN', 'UNASSIGNED',
+                              'PRICE_DIFFERENCE', '2026-10-12', current_timestamp)
+                    """
+                )
+            persist_realtime_event(
+                {
+                    "event_id": "event-analysis",
+                    "sequence_number": 1,
+                    "sequence_status": "FIRST",
+                    "transport": "ZEROMQ",
+                    "symbol": "AAPL",
+                    "price": 100.0,
+                    "exchange_timestamp": "2026-10-11T12:00:00+00:00",
+                    "received_timestamp": "2026-10-11T12:00:00.005+00:00",
+                    "latency_ms": 5.0,
+                    "pct_change": None,
+                    "is_anomaly": False,
+                    "reason": "warm-up",
+                },
+                trace_id="event-trace",
+                db_path=str(db_path),
+            )
+
+            data = load_dashboard_data(db_path, run_id="run-analysis", symbol="AAPL")
+
+            self.assertEqual(data.latest_run.iloc[0]["trace_id"], "batch-trace")
+            self.assertEqual(data.ingestion_health.iloc[0]["latency_ms"], 12.5)
+            self.assertEqual(
+                data.break_details.iloc[0]["reason_code"], "PRICE_DIFFERENCE"
+            )
+            self.assertEqual(data.recent_events.iloc[0]["event_id"], "event-analysis")
+            self.assertEqual(
+                data.event_sequence_health.iloc[0]["sequence_status"], "FIRST"
+            )
+
     def test_loads_break_analytics_from_read_only_database(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "reconciliation.duckdb"
@@ -187,7 +279,9 @@ class RealtimeDashboardTests(unittest.TestCase):
         socket = Mock()
         context.socket.return_value = socket
 
-        subscriber = RealtimeFeedSubscriber("inproc://dashboard-read-only", context=context)
+        subscriber = RealtimeFeedSubscriber(
+            "inproc://dashboard-read-only", context=context
+        )
         subscriber.close()
 
         context.socket.assert_called_once_with(zmq.SUB)

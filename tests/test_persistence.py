@@ -9,6 +9,7 @@ from reconciliation_engine.reconciliation.exceptions import create_equity_except
 from reconciliation_engine.storage.duckdb import (
     initialize_database,
     persist_equity_run,
+    persist_realtime_event,
 )
 
 
@@ -43,6 +44,36 @@ def _reconciliation() -> pd.DataFrame:
 
 
 class AtomicPersistenceTests(unittest.TestCase):
+    def test_realtime_event_journal_is_append_only_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = str(Path(directory) / "reconciliation.duckdb")
+            event = {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "sequence_status": "FIRST",
+                "transport": "ZEROMQ",
+                "symbol": "AAPL",
+                "price": 100.0,
+                "exchange_timestamp": "2026-10-09T20:00:00+00:00",
+                "received_timestamp": "2026-10-09T20:00:00.005+00:00",
+                "latency_ms": 5.0,
+                "pct_change": None,
+                "is_anomaly": False,
+                "reason": "warm-up",
+            }
+
+            self.assertTrue(
+                persist_realtime_event(
+                    event, trace_id="trace-1", span_id="span-1", db_path=db_path
+                )
+            )
+            self.assertFalse(persist_realtime_event(event, db_path=db_path))
+            with duckdb.connect(db_path, read_only=True) as connection:
+                row = connection.execute(
+                    "SELECT event_id, trace_id, span_id FROM realtime_event_journal"
+                ).fetchone()
+            self.assertEqual(row, ("event-1", "trace-1", "span-1"))
+
     def test_complete_run_commits_once_and_retry_is_a_noop(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = str(Path(directory) / "reconciliation.duckdb")

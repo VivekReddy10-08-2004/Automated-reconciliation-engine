@@ -22,7 +22,9 @@ flowchart LR
     D --> UI[Control-room dashboard]
 
     Z[Simulated ZeroMQ ticks] --> AS[Explainable anomaly scorer]
+    AS --> J[(Append-only event journal)]
     AS --> UI
+    J --> UI
 
     I & R & API --> O[OpenTelemetry traces and metrics]
 ```
@@ -116,6 +118,8 @@ results are in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 - Bounded partition concurrency, provider quota control, retries, and quarantine.
 - Persisted, idempotent Yahoo/Alpaca option-chain controls verified offline.
 - dbt equity facts, exception SLAs, authenticated exports, and serving snapshots.
+- Analysis-ready control room with ingestion diagnostics, exception drill-downs,
+  run history, repeat offenders, quarantine evidence, and persistent event traces.
 - Trace-correlated OpenTelemetry signals and an explainable ZeroMQ anomaly demo.
 - Repeatable correctness, performance, load, fault, and crash-recovery evidence.
 
@@ -236,6 +240,8 @@ fixture procedure are in [Benchmark Evidence](benchmarks/README.md).
 
 - **Docker:** `docker compose -f orchestration/docker/compose.yaml run --rm batch`
 - **Dashboard:** `python -m reconciliation_engine.dashboard --db reconciliation.duckdb --refresh 0.5`
+- **Investigation filters:** add `--run-id`, `--symbol`, `--provider`, or
+  `--trade-date` to focus the control-room evidence.
 - **Simulated real time:** start the anomaly scorer, dashboard, and publisher as documented in the runbook.
 - **Telemetry and alerts:** enable OTLP export and run `python -m reconciliation_engine.alerts`.
 - **Scheduling:** use the documented cron or Windows Task Scheduler entries; Airflow is not included.
@@ -270,7 +276,9 @@ placement rules.
   bars require matching observation times and price definitions before comparison
   with chain snapshots. Futures require contract-roll and session alignment.
 - DuckDB snapshots are a single-node design, not a distributed serving tier.
-- ZeroMQ is a simulated local demonstration without durable delivery.
+- ZeroMQ remains a simulated local transport without delivery guarantees. Scored
+  events are journaled idempotently in DuckDB for analysis and restart-safe
+  history; this does not turn ZeroMQ itself into a durable broker.
 - Docker and the external telemetry stack were not runnable on the evidence host.
 - Airflow, managed secrets, RBAC, TLS, backups, and immutable access auditing
   remain future deployment capabilities.

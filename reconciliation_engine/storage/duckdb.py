@@ -109,6 +109,12 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
             "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS "
             "massive_row_count BIGINT DEFAULT 0"
         )
+        conn.execute(
+            "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS trace_id VARCHAR"
+        )
+        conn.execute(
+            "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS root_span_id VARCHAR"
+        )
 
         # equity bars staging table
         conn.execute(
@@ -310,6 +316,27 @@ def initialize_database(db_path: str = "reconciliation.duckdb") -> None:
                 break_reason VARCHAR,
                 PRIMARY KEY (run_id, underlying, expiry, strike, option_type,
                              trade_date, source_a, source_b)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS realtime_event_journal (
+                event_id VARCHAR PRIMARY KEY,
+                sequence_number BIGINT NOT NULL,
+                sequence_status VARCHAR NOT NULL,
+                transport VARCHAR NOT NULL,
+                symbol VARCHAR NOT NULL,
+                price DOUBLE NOT NULL,
+                exchange_timestamp TIMESTAMP NOT NULL,
+                received_timestamp TIMESTAMP NOT NULL,
+                latency_ms DOUBLE NOT NULL,
+                pct_change DOUBLE,
+                is_anomaly BOOLEAN NOT NULL,
+                reason VARCHAR NOT NULL,
+                trace_id VARCHAR,
+                span_id VARCHAR,
+                recorded_at TIMESTAMP NOT NULL
             )
             """
         )
@@ -698,6 +725,8 @@ def persist_equity_run(
     reconciliation: pd.DataFrame,
     exceptions: pd.DataFrame,
     massive_bars: pd.DataFrame | None = None,
+    trace_id: str | None = None,
+    root_span_id: str | None = None,
     db_path: str = "reconciliation.duckdb",
 ) -> bool:
     """Atomically persist a complete equity run; return False if already stored."""
@@ -727,9 +756,9 @@ def persist_equity_run(
                 INSERT INTO pipeline_runs (
                     run_id, started_at, finished_at, status,
                     yahoo_row_count, alpaca_row_count, massive_row_count,
-                    match_count, break_count
+                    match_count, break_count, trace_id, root_span_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -741,6 +770,8 @@ def persist_equity_run(
                     len(massive_bars) if massive_bars is not None else 0,
                     match_count,
                     break_count,
+                    trace_id,
+                    root_span_id,
                 ),
             )
             if bar_rows:
@@ -779,6 +810,68 @@ def persist_equity_run(
         except Exception:
             conn.execute("ROLLBACK")
             raise
+    return True
+
+
+def persist_realtime_event(
+    event: dict[str, object],
+    *,
+    trace_id: str | None = None,
+    span_id: str | None = None,
+    db_path: str = "reconciliation.duckdb",
+    initialize_schema: bool = True,
+) -> bool:
+    """Append one validated real-time event; duplicate event IDs are idempotent."""
+    required = {
+        "event_id",
+        "sequence_number",
+        "sequence_status",
+        "transport",
+        "symbol",
+        "price",
+        "exchange_timestamp",
+        "received_timestamp",
+        "latency_ms",
+        "pct_change",
+        "is_anomaly",
+        "reason",
+    }
+    missing = required.difference(event)
+    if missing:
+        raise ValueError(f"Real-time event is missing fields: {sorted(missing)}")
+    if initialize_schema:
+        initialize_database(db_path)
+    with duckdb.connect(db_path) as conn:
+        before = conn.execute(
+            "SELECT count(*) FROM realtime_event_journal WHERE event_id = ?",
+            [event["event_id"]],
+        ).fetchone()[0]
+        if before:
+            return False
+        conn.execute(
+            """
+            INSERT INTO realtime_event_journal VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            """,
+            [
+                event["event_id"],
+                event["sequence_number"],
+                event["sequence_status"],
+                event["transport"],
+                event["symbol"],
+                event["price"],
+                event["exchange_timestamp"],
+                event["received_timestamp"],
+                event["latency_ms"],
+                event["pct_change"],
+                event["is_anomaly"],
+                event["reason"],
+                trace_id,
+                span_id,
+                datetime.now(timezone.utc),
+            ],
+        )
     return True
 
 

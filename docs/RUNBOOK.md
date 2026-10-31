@@ -182,7 +182,8 @@ contract.
 Open three terminals in the repository root. Start the scorer first:
 
 ```sh
-python -m reconciliation_engine.realtime.anomaly_scorer --count 10 --threshold-pct 0.1
+python -m reconciliation_engine.realtime.anomaly_scorer \
+  --count 10 --threshold-pct 0.1 --db reconciliation.duckdb
 ```
 
 Start the continuously refreshing dashboard second:
@@ -202,6 +203,25 @@ The dashboard remains usable if either DuckDB or the annotated feed is unavailab
 ```sh
 python -m reconciliation_engine.dashboard --db reconciliation.duckdb
 ```
+
+The scorer, not the dashboard, appends annotated events to
+`realtime_event_journal`. The dashboard keeps a read-only DuckDB connection and
+only creates a ZeroMQ `SUB` socket. Investigate a focused slice with parameterized
+filters:
+
+```sh
+python -m reconciliation_engine.dashboard \
+  --db reconciliation.duckdb \
+  --run-id <run-id> --symbol AAPL --provider YAHOO \
+  --trade-date 2026-10-30
+```
+
+The investigation workspace shows run history, ingestion partitions, provider
+latency, archive reuse, exception ownership and reason codes, repeat offenders,
+quarantine evidence, persistent event history, sequence health, and telemetry
+correlation IDs. `GAP`, `DUPLICATE`, and `REORDERED` are supported sequence
+classifications; the local simulated publisher normally produces only `FIRST`
+and `IN_ORDER`.
 
 Reference captures for both healthy and degraded modes are in [Dashboard demonstrations](DASHBOARD_DEMO.md).
 

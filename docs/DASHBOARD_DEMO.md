@@ -1,6 +1,6 @@
 # Dashboard Degraded-Mode Demonstrations
 
-Task 20 keeps the DuckDB and ZeroMQ read paths independent. These terminal
+The control room keeps the DuckDB and ZeroMQ read paths independent. These terminal
 captures demonstrate the three required operating modes with synthetic,
 non-sensitive data.
 
@@ -18,4 +18,8 @@ non-sensitive data.
 
 For a live demonstration, start the anomaly scorer, the dashboard with
 `--refresh 0.5`, and then the simulated publisher. The dashboard never writes
-to DuckDB and creates only a ZeroMQ `SUB` socket.
+to DuckDB and creates only a ZeroMQ `SUB` socket. The anomaly scorer writes the
+append-only event journal. The current screen also includes the investigation
+workspace (ingestion health, run history, detailed exceptions, repeat offenders,
+quarantines, event sequence health, and trace IDs); the legacy captures above
+remain evidence for independent degraded-mode behavior.

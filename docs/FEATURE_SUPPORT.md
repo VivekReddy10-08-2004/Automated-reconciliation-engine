@@ -27,7 +27,8 @@ each capability has been verified.
 | dbt equity models | Implemented, offline verified | All 23 models/tests pass against an initialized source schema. |
 | Authenticated export API | Implemented, offline verified | Endpoint, authentication, export, overload, and 1/10/25/50-client load tests pass. |
 | Atomic API serving snapshots | Implemented, offline verified | Snapshot independence and atomic replacement are covered by integration tests. |
-| ZeroMQ demonstration | Implemented, offline verified | In-process publisher/subscriber and anomaly-republication tests pass using simulated ticks. |
+| ZeroMQ demonstration and event journal | Implemented, offline verified | In-process publisher/subscriber and anomaly-republication tests pass using simulated ticks. Scored events receive deterministic IDs, sequence classifications, trace correlation, and idempotent DuckDB persistence. ZeroMQ itself remains non-durable. |
+| Analysis-ready control-room dashboard | Implemented, offline verified | Read-only views cover run history, ingestion partitions, provider latency, archive reuse, break/exception details, repeat offenders, quarantine summaries, persistent event traces, and sequence health. Filters support run, symbol, provider, and trade date. |
 | OpenTelemetry | Instrumented, offline verified | Spans, metrics, correlation, and in-memory exporters are tested. Collector/Tempo/Prometheus/Grafana were not run because Docker was unavailable. |
 | Docker batch image | Deployment contract verified | Dockerfile, Compose volume, non-root user, and secret-exclusion tests pass. No image was built on the verification host. |
 | Local scheduling | Implemented, operator configured | Cron and Windows Task Scheduler instructions are documented; scheduling is external to the application. |

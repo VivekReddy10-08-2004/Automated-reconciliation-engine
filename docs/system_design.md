@@ -72,7 +72,13 @@ and persisted end-to-end evidence are required before promotion. See
 1.  **Subscribing:** The anomaly scorer subscribes to the ZeroMQ bus and receives each tick.
 2.  **Feature Extraction:** It calculates the percentage change from the prior price for each symbol.
 3.  **Prediction:** A configurable, transparent absolute-percentage threshold sets `is_anomaly`; an optional deterministic **Isolation Forest** function supports offline comparison.
-4.  **Re-Publishing:** The scorer preserves the raw fields, adds `pct_change`, `is_anomaly`, and `reason`, then publishes the annotated tick on a separate local endpoint.
+4.  **Event identity and ordering:** The scorer assigns a deterministic `event_id`,
+    monotonic processing sequence, transport name, and `FIRST`, `IN_ORDER`, `GAP`,
+    `DUPLICATE`, or `REORDERED` sequence classification.
+5.  **Journaling:** The annotated event is appended idempotently to
+    `realtime_event_journal` with trace/span correlation before publication.
+6.  **Re-Publishing:** The scorer preserves the raw fields and publishes the
+    annotated event on a separate local endpoint.
 
 ### Phase 3: Historical Batch Ingestion & Reconciliation (Data Engineering Workflow)
 *(This process is run manually or by the documented local OS scheduler. Airflow is planned.)*
@@ -80,13 +86,19 @@ and persisted end-to-end evidence are required before promotion. See
 2.  **Batch Fetch:** The Ingestion Engine requests recent daily OHLCV bars from Yahoo, Alpaca, and Massive for each configured equity.
 3.  **Parquet Storage (Data Lake):** Payloads are saved once as immutable `.parquet` files partitioned by run ID. An interrupted retry reuses completed partitions.
 4.  **Validation and Alignment:** Symbols and dates are normalized; duplicate keys, nulls, invalid types, negative values, and inconsistent OHLC ranges are rejected.
-5.  **dbt Transformation:** A `dbt` project runs against **DuckDB** and joins equity sources on `(run_id, symbol, trade_date)`.
-6.  **Break Detection:** Python and dbt classify equity rows as `MATCH`, `WARN`, or `BREAK` using the same thresholds. One-sided provider observations are retained and break.
+5.  **Operational Reconciliation:** Python joins provider pairs on
+    `(symbol, trade_date)` and classifies `MATCH`, `WARN`, or `BREAK`. One-sided
+    observations are retained as breaks.
+6.  **Independent SQL Validation:** A separately invoked `dbt build` reads
+    DuckDB, reproduces the reconciliation fact, and runs data-quality tests. The
+    batch command does not invoke dbt automatically.
 
 ### Phase 4: Storage & Alerting
 1.  **Batch evidence:** Equity provider payloads, normalized bars, and reconciliation results are archived as Parquet; run, staging, result, and exception rows commit to DuckDB in one transaction or roll back together.
 2.  **Notification:** The batch sends a generic webhook summary only for `FAILED` or `SUCCESS_WITH_BREAKS`; without a webhook it prints the same non-sensitive summary.
-3.  **Current limit:** Real-time ticks and anomaly decisions are not persisted and do not trigger notifications.
+3.  **Real-time evidence:** Scored events and anomaly decisions are persisted in
+    an append-only DuckDB journal. They do not currently trigger notifications,
+    and the simulated ZeroMQ transport still provides no broker-level durability.
 
 ### Phase 5: Read-Only Distribution
 
@@ -120,10 +132,17 @@ The screen is a `rich` layout refreshed ~1–2×/second via `rich.live.Live`, di
 
 1.  **Latest Run (implemented):** Run ID, start time, status, matches, and breaks.
 2.  **Largest Mismatches (implemented):** Source values and deltas for the latest run, with absent observations displayed as `MISSING`.
-3.  **Operational Analytics (implemented):** Break-rate history, repeat offenders, and exception counts.
-4.  **Exception Management Analytics (implemented foundation):** Owner, age, SLA breaches, and resolution fields are persisted; the dashboard shows unassigned, overdue, and oldest-open counts.
-5.  **Ingestion Feed (implemented):** Most recent annotated tick, feed latency, and received count.
-6.  **Anomaly Monitor (implemented):** Rolling recent anomaly count and latest explained anomaly.
+3.  **Operational Analytics (implemented):** Break-rate history and repeat offenders.
+4.  **Ingestion Diagnostics (implemented):** Provider/bucket state, attempts,
+    returned rows, request latency, archive reuse, errors, and quarantine summaries.
+5.  **Exception Investigation (implemented):** Exception ID, reason, provider pair,
+    priority, owner, due time, unassigned/overdue counts, and oldest-open age.
+6.  **Trace Correlation (implemented):** Batch trace IDs and real-time event
+    trace/span IDs connect persisted evidence to OpenTelemetry.
+7.  **Persistent Event Analysis (implemented):** Event identity, processing
+    sequence, sequence health, transport, price, latency, anomaly status, and history.
+8.  **Ingestion Feed (implemented):** Most recent annotated tick, feed latency, and received count.
+9.  **Anomaly Monitor (implemented):** Rolling recent anomaly count and latest explained anomaly.
 
 ### How It Gets Data (read-only consumer)
 The dashboard is a **passive subscriber** — it never writes, so it can't affect the pipeline (consistent with the fault-isolation principle above):
@@ -132,9 +151,11 @@ The dashboard is a **passive subscriber** — it never writes, so it can't affec
 
 ### Tech & Effort
 *   **Library:** `rich` (`Live`, `Layout`, `Table`, `Panel`, `Progress`). Already a lightweight, pure-Python dependency.
-*   **Scope:** DuckDB batch state and ZeroMQ ingestion/anomaly panels are implemented. Richer exception analytics remain planned.
+*   **Scope:** DuckDB batch, ingestion, exception, quarantine, trace, and event
+    evidence are implemented alongside the live ZeroMQ ingestion/anomaly panel.
 *   **Run once:** `python -m reconciliation_engine.dashboard --db reconciliation.duckdb`.
 *   **Poll continuously:** `python -m reconciliation_engine.dashboard --db reconciliation.duckdb --refresh 0.5`.
+*   **Investigate:** add `--run-id`, `--symbol`, `--provider`, or `--trade-date`.
 
 ### Why It's Worth It
 *   **Demo impact:** A live, updating terminal UI is far more convincing in interviews than static logs or screenshots.
@@ -144,8 +165,8 @@ The dashboard is a **passive subscriber** — it never writes, so it can't affec
 
 Analytics make sense when they shorten investigation or reveal control weakness.
 The implemented slice shows break rate by run, largest current deltas, repeat
-offenders, and exception counts. The next slice adds open-exception age, SLA
-breaches, and grouping by provider, instrument type, and reconciliation rule.
+offenders, exception age and SLA state, provider-pair evidence, ingestion
+health, quarantines, and persistent real-time event traces.
 Predictive or portfolio analytics should wait until the control data is complete
 and reliable.
 
@@ -163,8 +184,12 @@ counterparty fields must be masked according to the viewer's role.
 | Repeat offenders | `equity_reconciliation_results` | Implemented |
 | Exception counts by status | `equity_exceptions` | Implemented |
 | Exception age, owner, and SLA | `equity_exceptions` | Implemented foundation |
-| Provider, rule, and instrument grouping | Unified reconciliation facts | Planned |
+| Provider and instrument grouping | Reconciliation and exception facts | Implemented |
 | Live latency and anomaly panels | ZeroMQ annotated-tick endpoint | Implemented |
+| Ingestion attempts, latency, reuse, and errors | Work partitions and provider metrics | Implemented |
+| Quarantine summary | Quarantine records | Implemented |
+| Persistent event trace and ordering health | Real-time event journal | Implemented |
+| Batch/event telemetry correlation | Persisted trace and span IDs | Implemented |
 
 ---
 

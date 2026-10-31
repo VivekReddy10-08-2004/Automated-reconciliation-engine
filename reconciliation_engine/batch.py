@@ -34,7 +34,11 @@ from reconciliation_engine.reconciliation.equities import (
     reconcile_equity_sources,
 )
 from reconciliation_engine.notifications import send_run_notification
-from reconciliation_engine.observability import configure_telemetry, get_telemetry, traced
+from reconciliation_engine.observability import (
+    configure_telemetry,
+    get_telemetry,
+    traced,
+)
 from reconciliation_engine.scaling.equity_ingestion import ingest_equity_partitions
 from reconciliation_engine.scaling.partitions import DEFAULT_SYMBOL_BUCKETS
 from reconciliation_engine.storage.duckdb import (
@@ -134,9 +138,7 @@ def _positive_environment_integer(name: str, default: int, maximum: int) -> int:
 def get_scaling_configuration() -> tuple[int, int]:
     """Return stable symbol-bucket count and bounded ingestion workers."""
     return (
-        _positive_environment_integer(
-            SYMBOL_BUCKETS_ENV, DEFAULT_SYMBOL_BUCKETS, 4096
-        ),
+        _positive_environment_integer(SYMBOL_BUCKETS_ENV, DEFAULT_SYMBOL_BUCKETS, 4096),
         _positive_environment_integer(MAX_WORKERS_ENV, DEFAULT_MAX_WORKERS, 64),
     )
 
@@ -237,9 +239,7 @@ def replay_archived_run(
         for source in ("YAHOO", "ALPACA", "MASSIVE")
     }
     available_provider_bars = {
-        source: frame
-        for source, frame in provider_bars.items()
-        if not frame.empty
+        source: frame for source, frame in provider_bars.items() if not frame.empty
     }
     if len(available_provider_bars) < 2:
         raise FileNotFoundError(
@@ -267,6 +267,11 @@ def main(
         selected_symbols, effective_control_date, bucket_count=bucket_count
     )
     active_span = trace.get_current_span()
+    span_context = active_span.get_span_context()
+    trace_id = format(span_context.trace_id, "032x") if span_context.is_valid else None
+    root_span_id = (
+        format(span_context.span_id, "016x") if span_context.is_valid else None
+    )
     active_span.set_attribute("run.id", run_id)
     active_span.set_attribute("control.date", effective_control_date.isoformat())
     active_span.set_attribute("symbol.count", len(selected_symbols))
@@ -356,7 +361,9 @@ def main(
         largest_difference = reconciliation_df["close_difference"].abs().max()
 
         exceptions_df = create_equity_exceptions(reconciliation_df, run_id)
-        with get_telemetry().span("storage.persist_run", **{"run.id": run_id, "db.system": "duckdb"}):
+        with get_telemetry().span(
+            "storage.persist_run", **{"run.id": run_id, "db.system": "duckdb"}
+        ):
             persisted = persist_equity_run(
                 run_id=run_id,
                 started_at=started_at,
@@ -367,6 +374,8 @@ def main(
                 massive_bars=provider_bars["MASSIVE"],
                 reconciliation=reconciliation_df,
                 exceptions=exceptions_df,
+                trace_id=trace_id,
+                root_span_id=root_span_id,
                 db_path=db_path,
             )
         if not persisted:
