@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime, timedelta, timezone
 import json
-from pathlib import Path
 import socket
 import struct
 import threading
-from typing import Callable, Iterable
+from collections.abc import Callable, Iterable
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 
 def event_frame(sequence_number: int, *, framing: str) -> bytes:
@@ -35,19 +35,19 @@ def event_frame(sequence_number: int, *, framing: str) -> bytes:
 
 def loopback_server(
     handler: Callable[[socket.socket], None],
-) -> tuple[str, int, threading.Thread, list[BaseException]]:
+) -> tuple[str, int, threading.Thread, list[Exception]]:
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind(("127.0.0.1", 0))
     listener.listen(2)
     listener.settimeout(10)
     host, port = listener.getsockname()
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
 
     def serve() -> None:
         try:
             handler(listener)
-        except BaseException as error:  # propagated in the benchmark process
+        except (OSError, RuntimeError, ValueError) as error:
             errors.append(error)
         finally:
             listener.close()

@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import platform
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 
 from benchmarks.network.common import write_csv, write_json
 from benchmarks.network.memory import benchmark as benchmark_memory
 from benchmarks.network.reconnect import benchmark as benchmark_reconnect
 from benchmarks.network.sequence import benchmark as benchmark_sequence
 from benchmarks.network.tcp import benchmark_framing
-
 
 PROFILES = {
     "quick": {
