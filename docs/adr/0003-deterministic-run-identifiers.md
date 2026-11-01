@@ -24,7 +24,7 @@ underlying, expiration, control date, and options rule version.
 
 ## Consequences
 
-The database primary key becomes an idempotency boundary. A completed retry is
+We use the database primary key as an idempotency boundary. A completed retry is
 a no-op, while an interrupted attempt can reuse immutable archives. A material
 rule change must increment the definition version or it would incorrectly map
 to an older logical run.

@@ -5,7 +5,7 @@
 
 ## Context
 
-The project needs to demonstrate tick publication, anomaly scoring, and an
+We need to demonstrate tick publication, anomaly scoring, and an
 independently degradable dashboard without requiring a managed broker.
 
 ## Alternatives considered
@@ -22,7 +22,7 @@ the published feed explicitly simulated and deterministic.
 
 ## Consequences
 
-The demo is lightweight and preserves process isolation. PUB/SUB does not offer
+We keep the demo lightweight and preserve process isolation. PUB/SUB does not offer
 durable replay, consumer offsets, delivery guarantees, or backpressure suitable
 for a production market-data platform.
 

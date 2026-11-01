@@ -1,8 +1,9 @@
 # Reproducible verification and benchmarks
 
 All workloads are deterministic, offline, and safe to run without provider
-credentials. Results in `results/` were recorded on October 13, 2026. Raw
-measurements are committed alongside dependency-free PNG charts in `charts/`.
+credentials. The batch/API results were recorded on October 13, 2026, and the
+ADR 0007 network results on October 31, 2026. Raw measurements are committed
+alongside dependency-free PNG charts in `charts/`.
 
 ## Published results
 
@@ -13,6 +14,21 @@ measurements are committed alongside dependency-free PNG charts in `charts/`.
 | Partition ingestion | 1,000 | 1 | 12.701 s | 78.73 rows/s | 228.52 MB |
 | Partition ingestion | 1,000 | 4 | 10.285 s | 97.23 rows/s | 226.45 MB |
 | Partition ingestion | 1,000 | 8 | 10.299 s | 97.10 rows/s | 229.00 MB |
+
+### ADR 0007 results on this host
+
+| Workload | Events | Duration | Throughput | Correctness / memory |
+| --- | ---: | ---: | ---: | --- |
+| TCP newline loopback | 10,000 | 1.679 s | 5,957 events/s | 0 sequence errors; p95 0.124 ms |
+| TCP length-prefixed loopback | 10,000 | 1.717 s | 5,823 events/s | 0 sequence errors; p95 0.115 ms |
+| Sequence tracking, 8 sources | 1,000,000 | 9.794 s | 102,100 events/s | 100% expected classifications |
+| Continuous monitor | 10,000 | 6.671 s | 1,499 events/s | 0 retained; 0.602 MiB traced peak |
+| Continuous monitor | 100,000 | 67.111 s | 1,490 events/s | 0 retained; 0.737 MiB traced peak |
+| TCP reconnect | 10,000 | 1.679 s | 5,956 events/s | 11.819 ms recovery; 0 lost |
+
+The reconnect measurement includes a configured 10 ms backoff. The monitor's
+100K run processed ten times as many events without retaining any event and
+with only 0.135 MiB more traced peak heap than the 10K run.
 
 The 100K and 1M correctness oracle found no lost records, duplicate business
 keys, or silent mismatches. The 1M result also shows the current in-memory
@@ -42,6 +58,52 @@ python -m benchmarks.benchmark_recovery
 python -m benchmarks.run_end_to_end_demo
 python -m benchmarks.chart_results
 ```
+
+## ADR 0007 network benchmarks
+
+We keep the network workloads together under `benchmarks/network/` and their
+raw evidence under `benchmarks/results/network/<profile>/`. Run the complete
+suite with:
+
+```sh
+python -m benchmarks.network.suite --profile quick
+python -m benchmarks.network.suite --profile full
+```
+
+The quick profile uses smaller inputs for development and writes to `quick/`.
+The full profile uses the published input sizes shown above and writes to
+`full/`. Both profiles record the host and exact settings in `environment.json`.
+Individual commands write to `manual/` by default:
+
+```sh
+python -m benchmarks.network.tcp --events 10000
+python -m benchmarks.network.sequence --events 1000000 --sources 8
+python -m benchmarks.network.memory --events 10000 100000
+python -m benchmarks.network.reconnect --events 10000 --disconnect-after 5000
+```
+
+The package contains:
+
+- `tcp` opens a real IPv4 loopback TCP listener and
+  reports newline versus length-prefixed throughput, wire throughput, receive
+  p50/p95/p99, and sequence errors.
+- `sequence` interleaves the same `TRADES` stream ID across
+  independent sources and reports classifier throughput, accuracy, and error
+  count.
+- `memory` exercises the continuous-monitor path without a
+  database or terminal output and reports retained events, traced Python heap,
+  process peak RSS, and throughput at multiple event counts.
+- `reconnect` closes a real TCP connection midway through the stream,
+  accepts a replacement connection, and reports recovery time, event loss, and
+  sequence errors.
+
+See the [network benchmark package](network/README.md) for its output contract
+and scope.
+
+These are local adapter and host measurements. They do not estimate vendor
+network latency, exchange-to-host latency, multicast loss on production
+interfaces, or TLS cost. Re-run them on the deployment host and retain the
+environment details with any capacity decision.
 
 For API load testing:
 

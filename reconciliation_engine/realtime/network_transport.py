@@ -243,24 +243,31 @@ class SequenceTracker:
         if duplicate_window <= 0:
             raise ValueError("duplicate_window must be positive")
         self.duplicate_window = duplicate_window
-        self._highest: dict[str, int] = {}
-        self._recent: dict[str, deque[int]] = {}
-        self._recent_sets: dict[str, set[int]] = {}
+        self._highest: dict[tuple[str, str], int] = {}
+        self._recent: dict[tuple[str, str], deque[int]] = {}
+        self._recent_counts: dict[tuple[str, str], dict[int, int]] = {}
 
-    def observe(self, stream: str, sequence_number: int) -> SequenceObservation:
-        if not isinstance(stream, str) or not stream.strip():
-            raise ValueError("stream must be non-empty")
+    def observe(
+        self,
+        source: str,
+        stream_id: str,
+        sequence_number: int,
+    ) -> SequenceObservation:
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError("source must be non-empty")
+        if not isinstance(stream_id, str) or not stream_id.strip():
+            raise ValueError("stream_id must be non-empty")
         if (
             isinstance(sequence_number, bool)
             or not isinstance(sequence_number, int)
             or sequence_number < 0
         ):
             raise ValueError("sequence_number must be a non-negative integer")
-        key = stream.strip().upper()
+        key = (source.strip().upper(), stream_id.strip().upper())
         highest = self._highest.get(key)
         recent = self._recent.setdefault(key, deque())
-        recent_set = self._recent_sets.setdefault(key, set())
-        if sequence_number in recent_set:
+        recent_counts = self._recent_counts.setdefault(key, {})
+        if sequence_number in recent_counts:
             observation = SequenceObservation(
                 "DUPLICATE",
                 None if highest is None else highest + 1,
@@ -280,11 +287,14 @@ class SequenceTracker:
         else:
             observation = SequenceObservation("REORDERED", highest + 1, 0)
         recent.append(sequence_number)
-        recent_set.add(sequence_number)
+        recent_counts[sequence_number] = recent_counts.get(sequence_number, 0) + 1
         while len(recent) > self.duplicate_window:
             removed = recent.popleft()
-            if removed not in recent:
-                recent_set.discard(removed)
+            remaining = recent_counts[removed] - 1
+            if remaining:
+                recent_counts[removed] = remaining
+            else:
+                del recent_counts[removed]
         return observation
 
 
@@ -691,14 +701,21 @@ def monitor_transport(
     count: int | None = None,
     journal_db_path: str | None = "reconciliation.duckdb",
     output: Callable[[str], None] | None = print,
+    collect_events: bool | None = None,
 ) -> list[MarketEvent]:
-    """Trace, classify, journal, and optionally print events from an adapter."""
+    """Trace, classify, journal, and optionally collect events from an adapter.
+
+    Finite runs retain their events by default for backwards compatibility.
+    Indefinite runs do not retain events, so a long-lived monitor has bounded
+    memory. Callers can override either default with ``collect_events``.
+    """
     if count is not None and count < 0:
         raise ValueError("count must be non-negative or None")
     if journal_db_path is not None:
         initialize_database(journal_db_path)
     tracker = SequenceTracker()
     observed: list[MarketEvent] = []
+    should_collect = count is not None if collect_events is None else collect_events
     for event in transport.events(limit=count):
         with get_telemetry().span(
             "network.event.process",
@@ -710,7 +727,11 @@ def monitor_transport(
                 "network.transport": event.transport,
             },
         ) as span:
-            sequence = tracker.observe(event.stream_id, event.sequence_number)
+            sequence = tracker.observe(
+                event.source,
+                event.stream_id,
+                event.sequence_number,
+            )
             span.set_attribute("event.sequence_status", sequence.status)
             span.set_attribute("event.missing_count", sequence.missing_count)
             span_context = trace.get_current_span().get_span_context()
@@ -754,7 +775,8 @@ def monitor_transport(
                     "missing_count": sequence.missing_count,
                 }
                 output(json.dumps(rendered, separators=(",", ":"), sort_keys=True))
-            observed.append(event)
+            if should_collect:
+                observed.append(event)
     return observed
 
 

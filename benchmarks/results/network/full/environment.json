@@ -1,0 +1,19 @@
+{
+  "logical_cpu_count": 32,
+  "platform": "Linux-6.8.0-38-generic-x86_64-with-glibc2.39",
+  "processor": "x86_64",
+  "profile": "full",
+  "python": "3.12.4 | packaged by Anaconda, Inc. | (main, Jun 18 2024, 15:12:24) [GCC 11.2.0]",
+  "recorded_at_utc": "2026-10-31",
+  "scope": "Local loopback and in-process adapter measurements",
+  "settings": {
+    "disconnect_after": 5000,
+    "memory_events": [
+      10000,
+      100000
+    ],
+    "reconnect_events": 10000,
+    "sequence_events": 1000000,
+    "tcp_events": 10000
+  }
+}

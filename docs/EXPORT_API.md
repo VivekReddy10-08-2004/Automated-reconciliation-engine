@@ -1,6 +1,6 @@
 # Read-Only Export API
 
-The FastAPI service exposes curated reconciliation evidence to dashboards and
+We expose curated reconciliation evidence through FastAPI to dashboards and
 other services without allowing them to modify DuckDB. Every data endpoint
 requires a bearer token; `/health` is public so a local supervisor or load
 balancer can probe the service.
@@ -20,7 +20,7 @@ python -m reconciliation_engine.api --db reconciliation.duckdb \
   --host 127.0.0.1 --port 8000 --max-concurrent-queries 4
 ```
 
-The default loopback binding prevents remote access. Put TLS and a production
+We default to a loopback binding to prevent remote access. Put TLS and a production
 identity-aware proxy in front of the service before binding it to a shared
 network. Do not pass the token on the command line or in a URL.
 
@@ -71,7 +71,7 @@ curl -OJ -H "Authorization: Bearer $RECONCILIATION_EXPORT_API_KEY" \
 
 ## DuckDB concurrency model
 
-The API deliberately uses:
+We deliberately use:
 
 - a bounded semaphore around database queries;
 - short-lived connections opened with `read_only=True`;
@@ -88,7 +88,7 @@ snapshot or curated Parquet files for the API, or move workflow state to a
 transactional database and analytics to a warehouse. Do not point multiple API
 workers on different machines at the same writable DuckDB file.
 
-The included snapshot publisher makes that recommendation executable. Run it
+We include a snapshot publisher to make that recommendation executable. Run it
 only after a completed batch, then point the API at the published file:
 
 ```sh

@@ -5,7 +5,7 @@
 
 ## Context
 
-The release needs SQL analytics, transactional run persistence, dbt support,
+We need SQL analytics, transactional run persistence, dbt support,
 and a setup that one developer can run without administering a database server.
 Writes are batch-oriented and API reads can be served from completed snapshots.
 
@@ -25,7 +25,7 @@ connections or a published snapshot.
 
 ## Consequences
 
-The project is portable and works naturally with Pandas, Parquet, and dbt.
+We keep the project portable and work naturally with Pandas, Parquet, and dbt.
 DuckDB is not treated as a multi-host OLTP service. Concurrent write/read
 contention must be bounded, and horizontal API scaling requires a different
 serving store or immutable snapshot distribution.

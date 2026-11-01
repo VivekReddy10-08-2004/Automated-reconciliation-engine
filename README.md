@@ -1,7 +1,8 @@
 # Automated Financial Data Ingestion & Reconciliation Engine
 
-A Python reconciliation engine with three-provider equity controls, a persisted
-Yahoo/Alpaca options workflow, and experimental Massive derivatives adapters.
+We built a Python reconciliation engine with three-provider equity controls, a
+persisted Yahoo/Alpaca options workflow, and experimental Massive derivatives
+adapters.
 
 ```mermaid
 flowchart LR
@@ -31,11 +32,12 @@ flowchart LR
     I & R & API --> O[OpenTelemetry traces and metrics]
 ```
 
-The equity three-provider batch is live-verified. The persisted Yahoo/Alpaca
-options control and simulated real-time path are implemented and offline-tested.
-Massive options and Yahoo/Massive futures remain experimental library capabilities;
-they are outside the supported persisted workflows. Airflow remains planned. See the
-[Feature Support Matrix](docs/FEATURE_SUPPORT.md) for exact evidence boundaries.
+We have live-verified the three-provider equity batch. We have implemented and
+offline-tested the persisted Yahoo/Alpaca options control and simulated
+real-time path. We currently keep Massive options and Yahoo/Massive futures as
+experimental library capabilities outside our persisted workflows, and we have
+left Airflow on the roadmap. See our [Feature Support Matrix](docs/FEATURE_SUPPORT.md)
+for the exact evidence boundaries.
 
 **Navigate:** [Support](#feature-support) · [Results](#verified-performance) ·
 [Quick start](#quick-start) · [Example](#example-break) · [API](#api-overview) ·
@@ -47,11 +49,11 @@ they are outside the supported persisted workflows. Airflow remains planned. See
 | Component | v1.0.0 support |
 | --- | --- |
 | Three-provider equity reconciliation | **Implemented, live verified** |
-| Persisted Yahoo/Alpaca options control | **Implemented, offline verified**; live provider run not claimed |
+| Persisted Yahoo/Alpaca options control | **Implemented, offline verified**; we have not yet run it against live option providers |
 | Massive options adapter | **Experimental, library only**; contract metadata and historical bars; outside the persisted options workflow |
 | Yahoo/Massive futures comparison | **Experimental, library only**; contract/session alignment required; persisted orchestration planned |
 | Export API and atomic snapshots | Implemented and offline/load tested |
-| TCP/TLS and UDP multicast JSON adapters | **Implemented, offline verified**; no live vendor feed claimed |
+| TCP/TLS and UDP multicast JSON adapters | **Implemented, offline verified**; we have not yet exercised them against a live vendor feed |
 | Benchmarks and crash recovery | Implemented and measured |
 | OpenTelemetry | Instrumented and offline tested; backend stack not runtime verified |
 | Docker batch | Contract tested; image execution not verified on the evidence host |
@@ -78,9 +80,9 @@ and deployment boundaries.
   <img src="benchmarks/charts/latency.svg" alt="Labeled p50, p95, and p99 API latency chart at 1, 10, 25, and 50 clients" width="49%">
 </p>
 
-The raw CSV/JSON evidence, environment metadata, recovery report, and exact
+We commit the raw CSV/JSON evidence, environment metadata, recovery report, and exact
 reproduction commands are committed under [`benchmarks/`](benchmarks/README.md).
-The 1M case establishes the safe in-memory envelope on the benchmark host;
+We use the 1M case as the safe in-memory envelope on the benchmark host;
 larger 5M–10M workloads require a future chunked or SQL execution path rather
 than the current in-memory Pandas implementation.
 
@@ -92,7 +94,7 @@ than the current in-memory Pandas implementation.
 python -m reconciliation_engine.batch --symbol AAPL
 ```
 
-The command fetches all three providers, reconciles every provider pair, stores one
+We fetch all three providers, reconcile every provider pair, store one
 auditable `run_id`, and creates exceptions for breaks. This verified example
 aligned eight market dates across three providers and produced 24 pairwise
 matches with no breaks:
@@ -107,13 +109,13 @@ combines the latest DuckDB batch state with annotated ZeroMQ ticks:
 
 ![Control-room dashboard with batch and real-time panels available](docs/dashboard_demos/both-available.svg)
 
-The batch and real-time panels degrade independently. Synthetic captures for
+We designed the batch and real-time panels to degrade independently. Synthetic captures for
 [batch unavailable](docs/dashboard_demos/batch-unavailable.svg) and
 [real-time unavailable](docs/dashboard_demos/realtime-unavailable.svg) are
 available without expanding the main page. Exact verification commands and
 results are in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 
-## Key Capabilities
+## What We Built
 
 - Canonical Yahoo, Alpaca, and Massive equity ingestion with provider-pair lineage.
 - Full-outer equity and option reconciliation with explicit missing-side breaks.
@@ -124,13 +126,14 @@ results are in [Release Evidence](docs/RELEASE_EVIDENCE.md).
 - Analysis-ready control room with ingestion diagnostics, exception drill-downs,
   run history, repeat offenders, quarantine evidence, and persistent event traces.
 - Offline-verified TCP/TLS and UDP multicast adapters with framing, bounded
-  reconnects, stream-aware vendor sequence controls, journaling, and capture filters.
+  reconnects, source-and-stream-aware vendor sequence controls, bounded
+  monitoring, journaling, capture filters, and reproducible local benchmarks.
 - Trace-correlated OpenTelemetry signals and an explainable ZeroMQ anomaly demo.
 - Repeatable correctness, performance, load, fault, and crash-recovery evidence.
 
-## Control Guarantees
+## Our Control Guarantees
 
-| Concern | Product behavior |
+| Concern | How we handle it |
 | --- | --- |
 | Missing provider observations | Every Yahoo/Alpaca/Massive provider pair uses a full outer comparison. A one-sided observation remains a `BREAK` with the missing provider named explicitly. |
 | Provider alignment | All equity providers use the same configured window; Yahoo and Massive request unadjusted prices to align with Alpaca's raw IEX bars. Symbols and dates are normalized, and Python/dbt share hybrid limits: warning above the greater of `$0.01` or `0.10%`, break above the greater of `$0.05` or `0.50%`. |
@@ -148,7 +151,7 @@ as critical breaks.
 
 ## Quick Start
 
-The fastest demonstration is completely offline and needs no provider keys:
+We provide a completely offline demonstration that needs no provider keys:
 
 ```sh
 python -m venv .venv
@@ -158,7 +161,7 @@ python -m reconciliation_engine.smoke
 python -m benchmarks.run_end_to_end_demo
 ```
 
-The demo generates deterministic provider frames, injects one break, archives
+Our demo generates deterministic provider frames, injects one break, archives
 inputs, reconciles and persists the run, restores its result, exports CSV, and
 captures a trace. To run live equities after configuring the owner-only
 `project.env` file:
@@ -187,8 +190,8 @@ symbol=S42  source_a=YAHOO  source_b=ALPACA
 status=BREAK  reason=PRICE_DIFFERENCE  close_difference=-2.00
 ```
 
-Missing provider observations are also retained as `BREAK` records; the engine
-does not hide them with an inner join or substitute synthetic market values.
+We also retain missing provider observations as `BREAK` records. We do not hide
+them with an inner join or substitute synthetic market values.
 
 ## API Overview
 
@@ -198,7 +201,7 @@ After a reconciliation has been persisted, start the export service:
 python -m reconciliation_engine.api --db reconciliation.duckdb
 ```
 
-The service provides authenticated run history, reconciliation and exception
+We provide authenticated run history, reconciliation and exception
 filters, and CSV/JSON/Parquet downloads. `/health` is public; all `/api/v1/*`
 routes require `Authorization: Bearer <RECONCILIATION_EXPORT_API_KEY>`.
 
@@ -224,7 +227,7 @@ python -m reconciliation_engine.api \
   --db snapshots/reconciliation-read.duckdb
 ```
 
-The publisher builds a complete temporary catalog before replacing the serving
+We build a complete temporary catalog before replacing the serving
 file, so consumers never observe a partially copied database.
 
 ## Testing and Reproducibility
@@ -256,12 +259,12 @@ Load the repository-local shortcuts with
 - **Telemetry and alerts:** enable OTLP export and run `python -m reconciliation_engine.alerts`.
 - **Scheduling:** use the documented cron or Windows Task Scheduler entries; Airflow is not included.
 
-The [operator runbook](docs/RUNBOOK.md) owns full configuration, Docker,
-ZeroMQ, scheduling, failure recovery, audit queries, and secret-handling
-instructions. See [Data Security](docs/DATA_SECURITY.md), [Observability](docs/OBSERVABILITY.md),
-and [Data Sources](DATA_SOURCES.md) for their respective contracts.
-The generic network feed wire contract and operational boundary are documented
-in [Network Transports](docs/NETWORK_TRANSPORTS.md).
+We keep configuration, Docker, ZeroMQ, scheduling, recovery, audit-query, and
+secret-handling instructions in our [operator runbook](docs/RUNBOOK.md). We
+cover security in [Data Security](docs/DATA_SECURITY.md), telemetry in
+[Observability](docs/OBSERVABILITY.md), and provider provenance in
+[Data Sources](DATA_SOURCES.md). We document our generic network-feed wire
+contract and operational boundary in [Network Transports](docs/NETWORK_TRANSPORTS.md).
 
 ## Project Structure
 
@@ -280,9 +283,10 @@ placement rules.
 
 ## Limitations and Roadmap
 
-- In-memory reconciliation used about **1.07 GB RSS at 1M rows per source**;
-  5M–10M requires a future chunked or SQL path.
-- Options persistence is offline-tested, not live-provider verified.
+- Our in-memory reconciliation used about **1.07 GB RSS at 1M rows per source**;
+  we need a chunked or SQL path for 5M–10M rows.
+- We have offline-tested options persistence but have not yet run it against live
+  option providers.
 - Massive options and Yahoo/Massive futures adapters are experimental and offline-tested;
   neither is part of a persisted derivatives workflow. Massive historical option
   bars require matching observation times and price definitions before comparison
@@ -291,12 +295,13 @@ placement rules.
 - ZeroMQ remains a simulated local transport without delivery guarantees. Scored
   events are journaled idempotently in DuckDB for analysis and restart-safe
   history; this does not turn ZeroMQ itself into a durable broker.
-- TCP/TLS and multicast adapters are generic JSON transports verified with local
-  sockets. Vendor authentication, subscription protocols, binary formats,
-  entitlements, A/B arbitration, and live feed certification are not claimed.
-- Docker and the external telemetry stack were not runnable on the evidence host.
-- Airflow, managed secrets, RBAC, TLS, backups, and immutable access auditing
-  remain future deployment capabilities.
+- We verified our generic TCP/TLS and multicast JSON transports with local
+  sockets. We have not yet integrated vendor authentication, subscription
+  protocols, binary formats, entitlements, A/B arbitration, or live feed
+  certification.
+- We could not run Docker or the external telemetry stack on the evidence host.
+- We still plan to add Airflow, managed secrets, RBAC, deployment-wide TLS,
+  backups, and immutable access auditing.
 - Provider entitlements and redistribution licensing remain operator concerns.
 
 ## Documentation
@@ -309,7 +314,7 @@ placement rules.
 | [Network Transports](docs/NETWORK_TRANSPORTS.md) | TCP/TLS and multicast wire contract, monitoring, sequence analysis, and packet capture |
 | [Operator Runbook](docs/RUNBOOK.md) | Configuration, live commands, recovery, Docker, scheduling, and audit queries |
 | [Current System and Roadmap](docs/SYSTEM_DESIGN_WORKFLOW.md) | Separate current and future architecture diagrams |
-| [Release Evidence](docs/RELEASE_EVIDENCE.md) | Live and offline verification claims |
+| [Release Evidence](docs/RELEASE_EVIDENCE.md) | Results from our live and offline verification |
 | [v1.0.0 Release Notes](docs/RELEASE_NOTES_V1.0.0.md) | Version scope and intended tag procedure |
 
 Released under the [MIT License](LICENSE).

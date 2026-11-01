@@ -1,7 +1,7 @@
 # Feature Support and Verification Levels
 
-This page is the source of truth for what release `v1.0.0` implements and how
-each capability has been verified.
+We use this page as the source of truth for what we implemented in release
+`v1.0.0` and how we verified each capability.
 
 ## Status definitions
 
@@ -20,7 +20,7 @@ each capability has been verified.
 | Component | Support level | Evidence or limitation |
 | --- | --- | --- |
 | Yahoo/Alpaca/Massive equity batch | Implemented, live verified | A real AAPL run, replay, deterministic retry, DuckDB audit, and Parquet evidence are recorded in [Release Evidence](RELEASE_EVIDENCE.md). |
-| Yahoo/Alpaca options batch | Implemented, offline verified | `reconciliation_engine.options_batch` atomically persists option runs and rejects duplicate logical runs; database integration tests pass. Live provider execution is not claimed. |
+| Yahoo/Alpaca options batch | Implemented, offline verified | `reconciliation_engine.options_batch` atomically persists option runs and rejects duplicate logical runs; our database integration tests pass. We have not yet run it against live option providers. |
 | Massive options adapter and three-provider comparison helpers | Experimental, library only | Contract metadata and historical aggregate bars are available through standalone adapter functions. Massive is not called by `options_batch`; offline fixtures do not establish live snapshot/bar comparability. |
 | Yahoo/Massive futures ingestion and reconciliation | Experimental, library only | Provider-aware comparison and roll-mapping tests exist. Live contract/session comparability is unverified; persisted orchestration is planned. |
 | DuckDB and Parquet equity audit trail | Implemented, live verified | The live equity run and offline crash/replay harness verify persisted evidence. |
@@ -28,20 +28,21 @@ each capability has been verified.
 | Authenticated export API | Implemented, offline verified | Endpoint, authentication, export, overload, and 1/10/25/50-client load tests pass. |
 | Atomic API serving snapshots | Implemented, offline verified | Snapshot independence and atomic replacement are covered by integration tests. |
 | ZeroMQ demonstration and event journal | Implemented, offline verified | In-process publisher/subscriber and anomaly-republication tests pass using simulated ticks. Scored events receive deterministic IDs, sequence classifications, trace correlation, and idempotent DuckDB persistence. ZeroMQ itself remains non-durable. |
-| TCP/TLS and UDP multicast transports | Implemented, offline verified | Generic JSON adapters cover newline and four-byte length framing, authenticated TLS wrapping, bounded reconnects, multicast join/leave, a common market-event contract, stream-aware vendor sequence analysis, journaling, telemetry, and capture-filter generation. No live vendor authentication, entitlement, or feed certification is claimed. |
+| TCP/TLS and UDP multicast transports | Implemented, offline verified | We implemented newline and four-byte length framing, authenticated TLS wrapping, bounded reconnects, multicast join/leave, a common market-event contract, source-and-stream-aware sequence analysis, bounded continuous monitoring, journaling, telemetry, capture-filter generation, real loopback TCP checks, and numerical local benchmarks. We have not yet exercised live vendor authentication, entitlements, or feed certification. |
 | Analysis-ready control-room dashboard | Implemented, offline verified | Read-only views cover run history, ingestion partitions, provider latency, archive reuse, break/exception details, repeat offenders, quarantine summaries, persistent event traces, and sequence health. Filters support run, symbol, provider, and trade date. |
 | OpenTelemetry | Instrumented, offline verified | Spans, metrics, correlation, and in-memory exporters are tested. Collector/Tempo/Prometheus/Grafana were not run because Docker was unavailable. |
 | Docker batch image | Deployment contract verified | Dockerfile, Compose volume, non-root user, and secret-exclusion tests pass. No image was built on the verification host. |
-| Local scheduling | Implemented, operator configured | Cron and Windows Task Scheduler instructions are documented; scheduling is external to the application. |
+| Local scheduling | Implemented, operator configured | We document cron and Windows Task Scheduler instructions; we keep scheduling outside our application runtime. |
 | Apache Airflow | Planned | No DAG, Airflow runtime, or task-log workflow is included. Airflow is not a core dependency. |
 | Managed secrets, RBAC, TLS, backups | Planned deployment controls | Local owner-only secrets and files are implemented; shared-environment controls remain deployment work. |
 
-“Offline verified” is an evidence boundary, not a statement that live providers
-will return comparable data for every entitlement, date, or instrument.
+When we say “offline verified,” we mean that deterministic tests passed without
+external providers. We do not use that status to imply live comparability for
+every entitlement, date, or instrument.
 
 ## Derivatives scope and promotion criteria
 
-The supported persisted options workflow is Yahoo/Alpaca, with offline evidence
+We support a persisted Yahoo/Alpaca options workflow with offline evidence
 only. Massive derivatives adapters are retained for evaluation and future
 historical controls; the normal options and equity commands do not invoke them.
 Their existence does not establish an operational three-provider derivatives control.

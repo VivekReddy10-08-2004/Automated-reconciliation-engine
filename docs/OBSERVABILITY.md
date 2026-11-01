@@ -1,6 +1,6 @@
 # OpenTelemetry and Alerting
 
-The reconciliation engine emits vendor-neutral OpenTelemetry traces and metrics
+We emit vendor-neutral OpenTelemetry traces and metrics
 over OTLP/HTTP. Structured JSON events include the active `trace_id` and
 `span_id`, allowing logs to be correlated without exporting credentials or raw
 provider payloads.
@@ -15,7 +15,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 OTEL_METRIC_EXPORT_INTERVAL=60000
 ```
 
-The implementation follows the standard OpenTelemetry resource and exporter
+We follow the standard OpenTelemetry resource and exporter
 environment variables. Signal-specific
 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and
 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` override the shared endpoint. OTLP headers,
@@ -46,11 +46,11 @@ Then enable telemetry and run the batch or API normally. Grafana is available
 at `http://127.0.0.1:3000`, Prometheus at `http://127.0.0.1:9090`, and Tempo at
 `http://127.0.0.1:3200`. Compose refuses to start until
 `GRAFANA_ADMIN_PASSWORD` is configured in the private environment file.
-The reference stack retains traces for 24 hours; production retention belongs
+We retain traces for 24 hours in the reference stack; production retention belongs
 in the selected telemetry backend.
 
-The Collector configuration uses a memory limiter and batching. Prometheus
-scrapes only the Collector's translated metrics endpoint. The application does
+We configure the Collector with a memory limiter and batching. Prometheus
+scrapes only the Collector's translated metrics endpoint. We do
 not expose a new unauthenticated metrics route.
 
 ## Traces
@@ -113,13 +113,13 @@ logs; raw packet and market-event payloads do not appear in metric labels.
 | `reconciliation.export.rows` | Counter | export format |
 | `reconciliation.alerts` | Counter | rule, severity, delivery outcome |
 
-Batch processes flush and shut down their providers at exit. The API exports
-periodically while running. `OTEL_SDK_DISABLED=true` overrides the application
+We flush and shut down batch telemetry providers at exit. We export API signals
+periodically while running. `OTEL_SDK_DISABLED=true` overrides our application
 switch and keeps every SDK signal disabled.
 
 ## Alerting
 
-Existing run alerts remain aggregated: a failed run or a run containing breaks
+We aggregate run alerts: a failed run or a run containing breaks
 produces one summary, never one notification per break. The operational alert
 evaluator adds these read-only rules:
 

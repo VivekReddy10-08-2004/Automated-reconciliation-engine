@@ -1,6 +1,6 @@
 # Data Security
 
-The reconciliation engine handles API credentials, vendor market data, and—when
+We handle API credentials, vendor market data, and—when
 real blotters replace the synthetic examples—commercially sensitive trade data.
 Security therefore applies to secrets, data access, retention, and operator
 output, not only to network encryption.
@@ -26,9 +26,9 @@ output, not only to network encryption.
   see only normalized OHLCV evidence needed to explain a selected break.
 - The TCP adapter supports authenticated TLS with hostname verification and has
   no insecure CLI bypass. Packet-capture helpers only construct narrow commands;
-  the application never elevates privileges or executes `tcpdump`.
+  we never elevate privileges or execute `tcpdump`.
 
-The corresponding implementation lives in `reconciliation_engine/security.py`,
+We keep the corresponding implementation in `reconciliation_engine/security.py`,
 the provider ingestion package, `reconciliation_engine/storage/duckdb.py`, and
 `reconciliation_engine/dashboard.py`. Automated tests verify private-file
 enforcement and read-only analytics loading.

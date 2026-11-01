@@ -1,6 +1,6 @@
 # System Design & Workflow
 
-This document describes the current architecture and release boundary for the
+We use this document to describe our current architecture and release boundary for the
 **Automated Financial Reconciliation Engine**. The repository contains a
 live-verified persisted equity control, an offline-verified persisted
 Yahoo/Alpaca options control, and an independent simulated real-time
@@ -10,7 +10,7 @@ demonstration. Future deployment capabilities are labeled explicitly. See the
 ---
 
 ## 1. High-Level Architecture
-The system is a local Python application with independently runnable batch,
+We run a local Python application with independently runnable batch,
 network-feed, real-time scoring, and dashboard processes. The simulated path
 communicates over **ZeroMQ**. Generic TCP/TLS and multicast adapters normalize
 JSON vendor events directly into the persistent event journal. The batch path
@@ -41,7 +41,7 @@ persists to Parquet and DuckDB.
 ---
 
 ## 2. Data Sources
-The current integrations are:
+We currently integrate:
 *   **Source A (Baseline):** `yfinance` (Yahoo Finance) for unadjusted end-of-day equity prices and **options chains** (`Ticker.option_chain()` exposes calls/puts with strike, expiry, bid/ask, implied volatility, open interest).
 *   **Source B (Cross-Reference):** Alpaca REST API for historical equities (`StockHistoricalDataClient`) and option snapshots (`OptionHistoricalDataClient` / `OptionChainRequest`). Equity batch requests explicitly use IEX; option coverage depends on account entitlement.
 *   **Source C:** Massive REST is integrated into the equity control. Its options contract/aggregate and futures contract/session adapters are experimental library capabilities. Requests share one process-wide quota controller.
@@ -58,9 +58,9 @@ Instrument coverage and integration boundaries:
 | Options | Supported workflow: Alpaca + yfinance | Persisted and offline-verified. Massive contract/aggregate adapters and three-provider helpers are experimental. |
 | Futures | Experimental libraries: yfinance + Massive | Continuous versus expiring contract/session alignment is required; persisted orchestration is planned. |
 
-The persisted equity batch compares all three provider pairs and records
+Our persisted equity batch compares all three provider pairs and records
 provider lineage in DuckDB, Parquet, dbt, exceptions, and the dashboard.
-The supported persisted options command controls Yahoo against Alpaca and is
+Our supported persisted options command controls Yahoo against Alpaca and is
 offline-verified only. Massive options ingestion and three-provider comparison
 helpers are experimental: historical aggregate closes need matching observation
 times and price definitions before comparison with chain snapshots. Experimental
@@ -79,7 +79,7 @@ and persisted end-to-end evidence are required before promotion. See
 2.  **Validation:** Network messages are decoded into the common `MarketEvent`
     contract with source, stream, vendor sequence, instrument, event type,
     price, quantity, and exchange timestamp.
-3.  **Latency Calculation:** The engine records UTC receipt time and subtracts
+3.  **Latency Calculation:** We record UTC receipt time and subtract
     exchange time to calculate latency in milliseconds.
 4.  **Sequence Control:** Network events are classified per stream as `FIRST`,
     `IN_ORDER`, `GAP`, `DUPLICATE`, or `REORDERED`; expected sequence and missing
@@ -134,7 +134,7 @@ and persisted end-to-end evidence are required before promotion. See
 ---
 
 ## 4. Why This Architecture Matters
-*   **Fault Isolation:** If the Database goes down, the Ingestion Engine and Message Bus stay up. The system doesn't crash completely.
+*   **Fault Isolation:** If the database goes down, we keep the ingestion engine and message bus running instead of losing the entire process chain.
 *   **Extensibility:** ZeroMQ separates the simulated publisher, scorer, and dashboard subscriber, while canonical batch schemas separate provider adapters from reconciliation logic.
 *   **Observability:** The explicit tracking of latency and breaks proves an understanding of enterprise support operations.
 
@@ -142,12 +142,12 @@ and persisted end-to-end evidence are required before promotion. See
 
 ## 5. CLI Control-Room Dashboard (Module G — Demo & Observability)
 
-A terminal dashboard built with **`rich`** makes breaks and control health visible.
+We use a terminal dashboard built with **`rich`** to make breaks and control health visible.
 Independent batch and live panels poll DuckDB and the annotated ZeroMQ feed
 without changing the dashboard's read-only role.
 
 ### What It Shows
-The screen is a `rich` layout refreshed ~1–2×/second via `rich.live.Live`, divided into panels:
+We render a `rich` layout ~1–2×/second via `rich.live.Live`, divided into panels:
 
 1.  **Latest Run (implemented):** Run ID, start time, status, matches, and breaks.
 2.  **Largest Mismatches (implemented):** Source values and deltas for the latest run, with absent observations displayed as `MISSING`.
@@ -164,7 +164,7 @@ The screen is a `rich` layout refreshed ~1–2×/second via `rich.live.Live`, di
 9.  **Anomaly Monitor (implemented):** Rolling recent anomaly count and latest explained anomaly.
 
 ### How It Gets Data (read-only consumer)
-The dashboard is a **passive subscriber** — it never writes, so it can't affect the pipeline (consistent with the fault-isolation principle above):
+We keep the dashboard as a **passive subscriber**—it never writes and therefore cannot affect the pipeline:
 *   **Batch panels (implemented)** connect to DuckDB with `read_only=True` and query curated run, reconciliation, and exception tables.
 *   **Real-time panels (implemented)** use a `SUB`-only socket on the **ZeroMQ bus** (Module E), reading the same annotated ticks the scorer publishes.
 
@@ -183,13 +183,13 @@ The dashboard is a **passive subscriber** — it never writes, so it can't affec
 ### Analytics That Support Reconciliation
 
 Analytics make sense when they shorten investigation or reveal control weakness.
-The implemented slice shows break rate by run, largest current deltas, repeat
+We show break rate by run, largest current deltas, repeat
 offenders, exception age and SLA state, provider-pair evidence, ingestion
 health, quarantines, and persistent real-time event traces.
 Predictive or portfolio analytics should wait until the control data is complete
 and reliable.
 
-The dashboard connects to DuckDB in read-only mode and reads curated results;
+We connect the dashboard to DuckDB in read-only mode and read curated results;
 raw payloads and credentials are outside its query surface. Row-level trade or
 counterparty fields must be masked according to the viewer's role.
 
@@ -214,12 +214,12 @@ counterparty fields must be masked according to the viewer's role.
 
 ## 6. Data Security
 
-The local MVP keeps secrets in a Git-ignored owner-only environment file and
+We keep local MVP secrets in a Git-ignored owner-only environment file and
 restricts DuckDB files to the current OS user. Provider clients load credentials
 only when a live request is made, so offline tests and dashboard use do not need
 secret access.
 
-A deployed version must use managed secrets with rotation, TLS, encryption at
+For a shared deployment, we require managed secrets with rotation, TLS, encryption at
 rest, service identities, role-based access, explicit retention, encrypted
 backups, and immutable audit events. Every reconciliation result should retain
 the source lineage and rule/config version needed to prove its integrity. See

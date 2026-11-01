@@ -31,4 +31,4 @@ reviewed release commit after CI succeeds.
   protocol, or feed-certification evidence.
 
 See [Feature Support](FEATURE_SUPPORT.md) for verification levels and
-[Release Evidence](RELEASE_EVIDENCE.md) for measured claims.
+[Release Evidence](RELEASE_EVIDENCE.md) for our measured results.

@@ -5,7 +5,7 @@ America/New_York, Monday through Friday**. The regular US equity session closes
 at 4:00 PM Eastern, so this gives the providers 30 minutes to publish
 end-of-day data.
 
-The schedule still runs on market holidays. It also runs after early-close
+Our schedule still runs on market holidays and after early-close
 sessions, because those sessions finish before 4:30 PM. Holiday awareness can
 be added later with an exchange-calendar check inside the Python entry point.
 
@@ -16,7 +16,7 @@ and confirm that `project.env` contains the required Alpaca credentials:
 python -m reconciliation_engine.batch
 ```
 
-The scheduled reconciliation universe comes from `project.env`:
+We read the scheduled reconciliation universe from `project.env`:
 
 ```env
 RECONCILIATION_SYMBOLS=AAPL,MSFT,NVDA
@@ -70,7 +70,7 @@ Register-ScheduledTask `
     -Settings $Settings
 ```
 
-The scheduled action executes:
+We execute:
 
 ```text
 C:\path\to\Automated-reconciliation-engine\.venv\Scripts\python.exe -m reconciliation_engine.batch
@@ -102,7 +102,7 @@ Unregister-ScheduledTask -TaskName "Automated Reconciliation Engine" -Confirm:$f
 
 ## Ubuntu cron
 
-The verified project directory in this workspace is:
+We verified this project directory in the current workspace:
 
 ```text
 /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine
@@ -115,7 +115,7 @@ the host timezone before installing the entry:
 timedatectl show -p Timezone --value
 ```
 
-This workspace reports `America/New_York`, so `16:30` remains aligned with the
+Our workspace reports `America/New_York`, so `16:30` remains aligned with the
 market close across daylight-saving changes. If another host reports a
 different timezone, either convert 4:30 PM Eastern to that host's local time or
 have an administrator configure the host timezone before installing the job.
@@ -140,7 +140,7 @@ Add these lines:
 30 16 * * 1-5 cd /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine && /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine/.venv/bin/python -m reconciliation_engine.batch >> /home/vivek/Documents/Vivek-projects/Automated-reconciliation-engine/logs/reconciliation.log 2>&1
 ```
 
-The explicit `cd` sets the working directory so `project.env` and
+We use the explicit `cd` to set the working directory so `project.env` and
 `reconciliation.duckdb` resolve inside the project.
 
 Verify the installed schedule:

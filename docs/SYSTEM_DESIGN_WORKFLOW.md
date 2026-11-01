@@ -1,23 +1,24 @@
 # Automated Reconciliation Engine: Current System and Roadmap
 
-This document contains two deliberately separate views:
+We use this document for two deliberately separate views:
 
 1. the components that exist in release `v1.0.0`; and
 2. the target architecture and Task 1–21 roadmap.
 
-Boxes in the target diagrams are not claims of current operation. The canonical
-verification boundary is the [Feature Support Matrix](FEATURE_SUPPORT.md).
+We do not treat boxes in target diagrams as evidence of current operation. We
+keep the canonical verification boundary in the [Feature Support Matrix](FEATURE_SUPPORT.md).
 
-Tasks 1–9, 11–17, and 20 represent the implemented local equity-control and
-simulated real-time release. ADR 0007 additionally implements offline-verified
-generic TCP/TLS and multicast JSON ingestion. The options persistence command is implemented and
-offline-tested, while live options execution is unverified. Task 19's batch
-container contract is implemented but awaits a Docker host. Task 10 futures
-persistence and Task 18 Airflow orchestration remain planned. Managed secrets,
-RBAC, application/API TLS, and backup controls are shared-deployment targets.
-The network adapter's authenticated TLS client is an implemented local capability.
+We implemented Tasks 1–9, 11–17, and 20 for the local equity-control and
+simulated real-time release. Through ADR 0007, we also implemented and
+offline-verified generic TCP/TLS and multicast JSON ingestion. We implemented
+and offline-tested options persistence but have not yet exercised it live. We
+implemented the Task 19 batch-container contract but still need a Docker host
+for runtime verification. We continue to plan Task 10 futures persistence,
+Task 18 Airflow orchestration, managed secrets, RBAC, application/API TLS, and
+backups for shared deployments.
+We provide an authenticated TLS client in the network adapter as a local capability.
 
-The supported options workflow uses Yahoo/Alpaca. Massive options and
+Our supported options workflow uses Yahoo/Alpaca. Massive options and
 Yahoo/Massive futures are experimental library capabilities outside the current
 persisted architecture. Future derivatives expansion depends on verified
 field/time/contract comparability; see the
@@ -39,7 +40,7 @@ flowchart LR
     duckdb --> dashboard["Read-only dashboard"]
     simulator["Simulated ticks"] --> zeromq["ZeroMQ"]
     zeromq --> scorer["Explainable anomaly scorer"]
-    network["TCP/TLS or multicast JSON"] --> marketEvent["MarketEvent + stream sequence control\noffline verified"]
+    network["TCP/TLS or multicast JSON"] --> marketEvent["MarketEvent + source/stream sequence control\noffline verified"]
     scorer --> journal["Persistent event journal"]
     marketEvent --> journal
     scorer --> dashboard
@@ -54,7 +55,7 @@ verified Docker execution, and no verified external telemetry backend.
 
 ## 2. Future Target Architecture
 
-The following is a roadmap diagram. Massive derivatives paths are conditional
+We use the following as a roadmap diagram. Massive derivatives paths are conditional
 on comparable provider observations and live evidence. Airflow, managed secrets, RBAC, TLS,
 encrypted backups, cross-instrument dashboards, and immutable access auditing
 are future deployment capabilities unless the support matrix says otherwise.
@@ -163,7 +164,7 @@ flowchart LR
 
 ## 3. Future End-State Batch and Real-Time Workflow
 
-This workflow intentionally includes planned cross-instrument and failure-state
+We intentionally include planned cross-instrument and failure-state
 behavior. It is not the runbook for the current release.
 
 ```mermaid
@@ -290,9 +291,9 @@ literal full-architecture release. Purple nodes remain on the roadmap.
 | Sensitive fields | Raw payloads excluded; normalized break evidence only | Role-based masking and export controls |
 | Audit | Run and exception lineage | Immutable access, export, rule-change, and admin events |
 
-The batch and real-time paths remain intentionally independent. DuckDB or ZeroMQ can fail without forcing the other dashboard panel to stop, and the dashboard remains a read-only consumer throughout.
+We intentionally keep the batch and real-time paths independent. DuckDB or ZeroMQ can fail without forcing the other dashboard panel to stop, and we keep the dashboard read-only throughout.
 
-The analytics layer is operational rather than predictive: it prioritizes the
+We keep the analytics layer operational rather than predictive: we prioritize the
 current largest mismatches, missing observations, break-rate history, repeat
 offenders, exception age, and SLA breaches. Security controls apply end to end:
 runtime secret access, encrypted transport/storage, least-privilege curated

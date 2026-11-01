@@ -5,6 +5,7 @@ from pathlib import Path
 import socket
 import struct
 import tempfile
+import threading
 import unittest
 from unittest.mock import Mock
 
@@ -84,15 +85,35 @@ class SequenceTrackerTests(unittest.TestCase):
     def test_classifies_gap_duplicate_and_reordered_vendor_sequences(self):
         tracker = SequenceTracker()
 
-        self.assertEqual(tracker.observe("vendor-a", 10).status, "FIRST")
-        self.assertEqual(tracker.observe("vendor-a", 11).status, "IN_ORDER")
-        gap = tracker.observe("vendor-a", 14)
+        self.assertEqual(tracker.observe("vendor-a", "trades", 10).status, "FIRST")
+        self.assertEqual(tracker.observe("vendor-a", "trades", 11).status, "IN_ORDER")
+        gap = tracker.observe("vendor-a", "trades", 14)
         self.assertEqual(gap.status, "GAP")
         self.assertEqual(gap.expected_sequence, 12)
         self.assertEqual(gap.missing_count, 2)
-        self.assertEqual(tracker.observe("vendor-a", 14).status, "DUPLICATE")
-        self.assertEqual(tracker.observe("vendor-a", 13).status, "REORDERED")
-        self.assertEqual(tracker.observe("vendor-b", 500).status, "FIRST")
+        self.assertEqual(tracker.observe("vendor-a", "trades", 14).status, "DUPLICATE")
+        self.assertEqual(tracker.observe("vendor-a", "trades", 13).status, "REORDERED")
+        self.assertEqual(tracker.observe("vendor-b", "trades", 500).status, "FIRST")
+
+    def test_tracks_same_stream_id_independently_for_each_source(self):
+        tracker = SequenceTracker()
+
+        self.assertEqual(tracker.observe("vendor-a", "trades", 100).status, "FIRST")
+        self.assertEqual(tracker.observe("vendor-b", "trades", 1).status, "FIRST")
+        self.assertEqual(tracker.observe("vendor-a", "trades", 101).status, "IN_ORDER")
+        self.assertEqual(tracker.observe("vendor-b", "trades", 2).status, "IN_ORDER")
+
+    def test_duplicate_classification_expires_at_bounded_window(self):
+        tracker = SequenceTracker(duplicate_window=2)
+
+        tracker.observe("vendor-a", "trades", 1)
+        tracker.observe("vendor-a", "trades", 2)
+        tracker.observe("vendor-a", "trades", 3)
+
+        self.assertEqual(
+            tracker.observe("vendor-a", "trades", 1).status,
+            "REORDERED",
+        )
 
 
 class TCPTransportTests(unittest.TestCase):
@@ -120,6 +141,37 @@ class TCPTransportTests(unittest.TestCase):
 
         self.assertEqual(event.sequence_number, 10)
         self.assertEqual(event.transport, "TCP")
+
+    def test_receives_from_real_loopback_tcp_listener(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        host, port = listener.getsockname()
+
+        def send_frame() -> None:
+            connection, _address = listener.accept()
+            with connection:
+                connection.sendall(_frame(16) + b"\n")
+            listener.close()
+
+        sender = threading.Thread(target=send_frame, daemon=True)
+        sender.start()
+        transport = TCPTransport(
+            host,
+            port,
+            reconnect_attempts=0,
+            connect_timeout=1,
+            read_timeout=1,
+        )
+        try:
+            event = transport.receive()
+        finally:
+            transport.close()
+            listener.close()
+            sender.join(timeout=1)
+
+        self.assertFalse(sender.is_alive())
+        self.assertEqual(event.sequence_number, 16)
 
     def test_preserves_buffered_second_newline_frame(self):
         transport, server = self._socket_transport(
@@ -271,7 +323,47 @@ class _ListTransport(MarketEventTransport):
         return None
 
 
+class _FiniteStreamTransport(_ListTransport):
+    def events(self, limit=None):
+        yield from self._events
+
+
 class MonitoringAndCaptureTests(unittest.TestCase):
+    def test_indefinite_monitor_does_not_retain_events_by_default(self):
+        received_at = datetime.now(timezone.utc)
+        events = [
+            MarketEvent.from_mapping(
+                _payload(sequence), transport="TCP", received_at=received_at
+            )
+            for sequence in range(10, 15)
+        ]
+
+        observed = monitor_transport(
+            _FiniteStreamTransport(events),
+            count=None,
+            journal_db_path=None,
+            output=None,
+        )
+
+        self.assertEqual(observed, [])
+
+    def test_finite_monitor_can_disable_event_collection(self):
+        event = MarketEvent.from_mapping(
+            _payload(10),
+            transport="TCP",
+            received_at=datetime.now(timezone.utc),
+        )
+
+        observed = monitor_transport(
+            _ListTransport([event]),
+            count=1,
+            journal_db_path=None,
+            output=None,
+            collect_events=False,
+        )
+
+        self.assertEqual(observed, [])
+
     def test_renders_bounded_dataframe_style_event_table(self):
         table_output = EventTableOutput(max_rows=2)
         for sequence, status in ((10, "FIRST"), (12, "GAP"), (11, "REORDERED")):

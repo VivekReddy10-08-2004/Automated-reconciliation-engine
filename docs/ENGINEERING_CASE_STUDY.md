@@ -7,7 +7,7 @@ They differ in schemas, coverage, adjustment policy, timestamps, account
 entitlements, and availability. A naïve inner join silently discards missing
 records; a naïve retry can duplicate writes or consume provider quota again.
 
-The project builds a local, auditable control that answers three questions:
+We built a local, auditable control that answers three questions:
 
 1. What did each provider return?
 2. Which observations match, warn, break, or exist on only one side?
@@ -15,24 +15,26 @@ The project builds a local, auditable control that answers three questions:
 
 ## Current architecture
 
-Provider adapters normalize equity and option observations into canonical
-schemas. Equity work is divided into stable provider/symbol partitions and
-executed with bounded concurrency. Raw and normalized inputs are written to
-immutable Parquet checkpoints. Pairwise reconciliation preserves one-sided
-observations and writes run, result, and exception state atomically to DuckDB.
+We normalize equity and option observations through provider adapters and divide
+equity work into stable provider/symbol partitions with bounded concurrency. We
+write raw and normalized inputs to immutable Parquet checkpoints. Our pairwise
+reconciliation preserves one-sided observations and writes run, result, and
+exception state atomically to DuckDB.
 
-dbt builds typed equity facts from the staged source. An authenticated FastAPI
-service exposes curated runs, reconciliations, exceptions, and bounded exports.
-For concurrent serving, a completed DuckDB catalog is atomically published as a
-read-only snapshot. A separate simulated ZeroMQ path demonstrates tick latency,
-explainable anomaly scoring, and dashboard failure isolation.
+We build typed equity facts from staged sources with dbt and expose curated
+runs, reconciliations, exceptions, and bounded exports through an authenticated
+FastAPI service. For concurrent serving, we atomically publish a completed
+DuckDB catalog as a read-only snapshot. We use a separate simulated ZeroMQ path
+to demonstrate tick latency, explainable anomaly scoring, and dashboard failure
+isolation.
 
-Generic TCP/TLS and IPv4 multicast adapters normalize framed JSON into a shared
-`MarketEvent`, classify vendor sequences per feed stream, and append correlated
-evidence to the event journal. Local-socket tests verify transport behavior; no
-vendor-specific login, entitlement, or live feed is claimed.
+We normalize framed JSON from our generic TCP/TLS and IPv4 multicast adapters
+into a shared `MarketEvent`, classify vendor sequences per feed stream, and
+append correlated evidence to the event journal. We verified transport behavior
+with local-socket tests but have not yet integrated a vendor-specific login,
+entitlement, or live feed.
 
-The exact implemented/planned boundary is maintained in the
+We maintain the exact implemented/planned boundary in the
 [Feature Support Matrix](FEATURE_SUPPORT.md).
 
 ## Engineering challenges
@@ -54,7 +56,7 @@ DuckDB write is one transaction.
 ### Concurrent reading and writing
 
 DuckDB is a strong local analytical fit but not a multi-host serving database.
-The API uses bounded read-only connections, and the snapshot publisher creates
+We use bounded read-only API connections, and our snapshot publisher creates
 a complete temporary catalog before atomically replacing the serving file.
 
 ### Vendor quotas and scaling
@@ -77,12 +79,12 @@ then flattened, demonstrating why concurrency is capped rather than maximized.
 - **Transport-independent market events:** one strict downstream contract for
   newline/length-framed TCP, authenticated TLS, and multicast datagrams.
 
-The detailed trade-offs and revisit conditions are recorded in
+We record our detailed trade-offs and revisit conditions in
 [Architecture Decision Records](adr/README.md).
 
 ## Evidence
 
-The correctness oracle found zero lost records and zero duplicate keys at 100K
+Our correctness oracle found zero lost records and zero duplicate keys at 100K
 and 1M rows per source, while detecting every injected break. The 1M workload
 completed in 30.173 seconds at 33,142 rows/second with 1,066 MB peak RSS.
 
@@ -91,7 +93,7 @@ archival, and after commit. They demonstrated respectively no partial state,
 reusable immutable evidence without a database row, and exactly one committed
 run. Fault tests cover timeouts, HTTP 429, corrupt payloads, and disk failure.
 
-The export API was measured with 1, 10, 25, and 50 authenticated clients against
+We measured the export API with 1, 10, 25, and 50 authenticated clients against
 a 10,000-row fixture. All measured runs had zero errors; raw throughput and
 p50/p95/p99 latency are committed under `benchmarks/results/`.
 

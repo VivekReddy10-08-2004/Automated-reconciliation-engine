@@ -92,7 +92,7 @@ flowchart TD
 - Expose a read-only dashboard with break-rate trends, largest mismatches, repeat offenders, and exception counts; add aging and SLA views when their fields are persisted.
 - Mask counterparty, account, and other sensitive identifiers in dashboards and notifications.
 
-The implemented MVP dashboard currently supports the latest run, largest
+Our implemented MVP dashboard currently supports the latest run, largest
 mismatches (including missing observations), break-rate history, repeat
 offenders, and exception counts. Aging, ownership, SLA, provider, rule, and
 instrument-type cuts require the expanded exception and reconciliation schemas
@@ -160,7 +160,7 @@ described below.
 - `run_id`, `exception_id`, `resource_type`, `resource_id`
 - `before_state_hash`, `after_state_hash`, `correlation_id`
 
-The operator dashboard should query curated views over these tables. It must not
+We query curated views over these tables from the operator dashboard. We do not
 receive write privileges or direct access to credentials and raw payloads.
 
 ---
@@ -215,6 +215,6 @@ If you can demo this live with 5-10 tickers, you are strongly aligned with Trade
 reconciles key fields with threshold-based break detection, and creates
 auditable exceptions. A read-only control-room dashboard shows the largest
 mismatches, missing observations, break trends, and recurring failures, while
-least-privilege and secret-handling controls protect the data path. The project
-mirrors how Trade Ops teams prevent bad data from flowing into downstream
+least-privilege and secret-handling controls protect the data path. I designed
+this to mirror how Trade Ops teams prevent bad data from flowing into downstream
 booking, settlement, and reporting processes."

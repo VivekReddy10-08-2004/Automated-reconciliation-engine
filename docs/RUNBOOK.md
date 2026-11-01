@@ -1,12 +1,12 @@
 # Reconciliation Engine Runbook
 
-This runbook covers the live-verified Yahoo/Alpaca/Massive equity batch, the
+We use this runbook for the live-verified Yahoo/Alpaca/Massive equity batch, the
 offline-verified persisted Yahoo/Alpaca options command, DuckDB and Parquet
 audit paths, dbt equity models, notifications, the simulated ZeroMQ path,
 dashboard, local scheduling, and the batch Docker contract.
 
-Options persistence is implemented and offline-tested but has not been
-live-provider verified. Massive options and Yahoo/Massive futures remain
+We implemented and offline-tested options persistence but have not yet run it
+against live providers. We keep Massive options and Yahoo/Massive futures as
 experimental library capabilities outside the supported persisted workflows.
 Airflow is planned; the
 supported scheduler is Windows Task Scheduler or cron. See the
@@ -43,7 +43,7 @@ On Windows, restrict `project.env` to the account that runs the control. Never p
 | `REALTIME_SCORED_ZMQ_ENDPOINT` | No | Annotated-tick endpoint; defaults to `tcp://127.0.0.1:5556` |
 | `RECONCILIATION_DB_PATH` | No | DuckDB path used by dbt; the Python CLI uses `--db` |
 
-Use different local endpoints for raw and scored ticks. The application rejects non-local real-time endpoints in this release.
+Use different local endpoints for raw and scored ticks. We reject non-local real-time endpoints in this release.
 
 ## 2. Local setup and verification
 
@@ -59,7 +59,7 @@ python -m unittest discover -s tests -v
 
 On Windows PowerShell, activate with `.venv\Scripts\Activate.ps1`.
 
-The smoke command imports release components, validates credentials without displaying them, validates the configured symbols and local ZeroMQ endpoints, and creates a temporary DuckDB schema. It makes no Yahoo, Alpaca, or Massive request. To inspect and migrate an existing database schema as part of the check:
+Our smoke command imports release components, validates credentials without displaying them, validates the configured symbols and local ZeroMQ endpoints, and creates a temporary DuckDB schema. We make no Yahoo, Alpaca, or Massive request during this check. To inspect and migrate an existing database schema as part of the check:
 
 ```sh
 python -m reconciliation_engine.smoke --db reconciliation.duckdb
@@ -79,7 +79,10 @@ Override it for one run:
 python -m reconciliation_engine.batch --symbol AAPL --symbol MSFT --symbol NVDA
 ```
 
-The command prints a deterministic UUID `run_id`. The ID is derived from the US-market control date, sorted symbol universe, and reconciliation-rule version. It stores the run, staging rows, reconciliation results, and exceptions in `reconciliation.duckdb`, and writes immutable Parquet evidence beneath `data/`.
+We print a deterministic UUID `run_id`, derived from the US-market control date,
+sorted symbol universe, and reconciliation-rule version. We store the run,
+staging rows, reconciliation results, and exceptions in
+`reconciliation.duckdb`, and write immutable Parquet evidence beneath `data/`.
 
 Retry the same logical run safely, or specify the date explicitly for a backfill:
 
@@ -118,16 +121,16 @@ python -m reconciliation_engine.options_batch AAPL 2026-12-18 \
   --control-date 2026-10-13 --db reconciliation.duckdb
 ```
 
-The command fetches Yahoo and Alpaca option chains, reconciles contracts by
+We fetch Yahoo and Alpaca option chains and reconcile contracts by
 underlying, expiration, strike, type, and trade date, and atomically writes
 `option_runs`, `option_contracts_staging`, and
 `option_reconciliation_results`. The logical ID is deterministic, so repeating
 the same underlying, expiration, and control date performs no additional
 database write.
 
-This path is implemented and covered by offline database integration tests. It
-has not been exercised with live provider credentials in the published release
-evidence. Empty or incomparable provider data remains an explicit break; it is
+We implemented this path and covered it with offline database integration
+tests. We have not yet exercised it with live provider credentials in our
+published release evidence. Empty or incomparable provider data remains an explicit break; it is
 not replaced with synthetic values. There is no persisted futures command in
 v1.0.0.
 
@@ -187,7 +190,7 @@ From the repository root, load the project-local shortcuts once per shell:
 . scripts/reconciliation_aliases.sh
 ```
 
-The main commands then become:
+You can then use these short commands:
 
 ```sh
 recon-tcp
@@ -232,14 +235,14 @@ Start the deterministic publisher last:
 python -m reconciliation_engine.realtime.publisher --count 10
 ```
 
-The dashboard remains usable if either DuckDB or the annotated feed is unavailable. A static batch-only snapshot is also available:
+We keep the dashboard usable if either DuckDB or the annotated feed is unavailable. We also provide a static batch-only snapshot:
 
 ```sh
 python -m reconciliation_engine.dashboard --db reconciliation.duckdb
 ```
 
-The scorer, not the dashboard, appends annotated events to
-`realtime_event_journal`. The dashboard keeps a read-only DuckDB connection and
+We append annotated events from the scorer, not the dashboard, to
+`realtime_event_journal`. We keep a read-only DuckDB connection in the dashboard and
 only creates a ZeroMQ `SUB` socket. Investigate a focused slice with parameterized
 filters:
 
@@ -250,7 +253,7 @@ python -m reconciliation_engine.dashboard \
   --trade-date 2026-10-30
 ```
 
-The investigation workspace shows run history, ingestion partitions, provider
+We show run history, ingestion partitions, provider
 latency, archive reuse, exception ownership and reason codes, repeat offenders,
 quarantine evidence, persistent event history, sequence health, and telemetry
 correlation IDs. `GAP`, `DUPLICATE`, and `REORDERED` are supported sequence
@@ -261,7 +264,7 @@ Reference captures for both healthy and degraded modes are in [Dashboard demonst
 
 ### Monitor TCP/TLS or multicast market events
 
-The generic network adapters accept the JSON `MarketEvent` contract documented
+Our generic network adapters accept the JSON `MarketEvent` contract documented
 in [Network Transports](NETWORK_TRANSPORTS.md). Example newline-framed TCP:
 
 ```sh
@@ -270,7 +273,7 @@ python -m reconciliation_engine.realtime.network_transport tcp \
   --db reconciliation.duckdb
 ```
 
-The default output is a live dataframe-style table retaining the latest 20
+We default to a live dataframe-style table retaining the latest 20
 events. Use `--table-rows 50` for a larger window or `--output-format json` for
 newline-delimited machine output.
 
@@ -303,7 +306,8 @@ docker compose -f orchestration/docker/compose.yaml build --pull
 docker compose -f orchestration/docker/compose.yaml run --rm batch
 ```
 
-The named volume `automated-reconciliation-engine-state` retains DuckDB and Parquet data. Verify the stored run count:
+We retain DuckDB and Parquet data in the named volume
+`automated-reconciliation-engine-state`. Verify the stored run count:
 
 ```sh
 docker compose -f orchestration/docker/compose.yaml run --rm \
@@ -371,7 +375,7 @@ python -c "import duckdb; c=duckdb.connect('reconciliation.duckdb', read_only=Tr
 python -c "import duckdb; print(duckdb.read_parquet('data/reconciliation/equities/run_id=<run-id>/results.parquet').df().to_string(index=False))"
 ```
 
-The corresponding provider evidence is located at:
+We store the corresponding provider evidence at:
 
 ```text
 data/raw/YAHOO/equities/run_id=<run-id>/payload.parquet
@@ -382,7 +386,11 @@ data/normalized/ALPACA/equities/run_id=<run-id>/data.parquet
 
 ### Inspect scheduler logs
 
-The supported local scheduler and log locations are documented in [Scheduling](SCHEDULING.md). Airflow is not included in this release, so there are no Airflow task logs to inspect. If orchestration is added, this section must document the workflow ID, manual trigger command, task-log location, retry behavior, and run-ID lookup before it is presented as runnable.
+We document the supported local scheduler and log locations in
+[Scheduling](SCHEDULING.md). We do not include Airflow in this release, so we
+have no Airflow task logs to inspect. Before we present future orchestration as
+runnable, we will document its workflow ID, manual trigger command, task-log
+location, retry behavior, and run-ID lookup.
 
 ## 10. Release evidence and safety checks
 
@@ -402,7 +410,8 @@ fi
 
 Then complete one live batch run with valid credentials, save its `run_id`, open the one-shot dashboard, and capture only non-sensitive output. Existing non-sensitive dashboard evidence is stored under `docs/dashboard_demos/`.
 
-The latest checked release evidence and environment-specific limitations are recorded in [Release Evidence](RELEASE_EVIDENCE.md).
+We record our latest checked evidence and environment-specific limitations in
+[Release Evidence](RELEASE_EVIDENCE.md).
 
 Do not publish `project.env`, databases, Parquet files, logs, recovery codes, virtual environments, or generated dbt artifacts. See [Data security](DATA_SECURITY.md) and [Data sources](../DATA_SOURCES.md) for the security and provider caveats.
 

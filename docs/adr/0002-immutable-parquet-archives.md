@@ -33,6 +33,6 @@ partitions.
 
 ## Revisit when
 
-The archive moves to object storage at materially larger scale. The immutability
+At materially larger scale, we move the archive to object storage. The immutability
 rule remains, but table formats such as Iceberg or Delta may provide better
 catalog, compaction, and schema-evolution behavior.

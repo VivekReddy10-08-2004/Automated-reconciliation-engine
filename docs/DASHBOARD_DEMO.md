@@ -1,6 +1,6 @@
 # Dashboard Degraded-Mode Demonstrations
 
-The control room keeps the DuckDB and ZeroMQ read paths independent. These terminal
+We keep the DuckDB and ZeroMQ read paths independent in the control room. These terminal
 captures demonstrate the three required operating modes with synthetic,
 non-sensitive data.
 

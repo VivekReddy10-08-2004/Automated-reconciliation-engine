@@ -1,6 +1,6 @@
 # Scalability and Deployment Model
 
-The engine scales by dividing a logical control into deterministic work units:
+We scale by dividing a logical control into deterministic work units:
 
 ```text
 control date -> instrument type -> stable symbol bucket -> provider
@@ -42,7 +42,7 @@ worker completion, preserving DuckDB's single-writer operating model.
 
 ## Retry and quarantine behavior
 
-The `work_partitions` table records status, attempts, timestamps, row counts,
+We use the `work_partitions` table to record status, attempts, timestamps, row counts,
 and safe error metadata. A retry:
 
 - reads a completed normalized partition without calling the provider;
@@ -51,7 +51,7 @@ and safe error metadata. A retry:
 - places invalid or failed work in `quarantine_records` for investigation.
 
 Raw evidence is immutable. If archived raw data is malformed, fixing the
-normalizer allows it to be replayed; the engine does not silently replace the
+normalizer allows it to be replayed; we do not silently replace the
 evidence with a different payload.
 
 ## Storage growth and retention
@@ -102,11 +102,11 @@ responsibility:
 | Data exports | Bounded read-only FastAPI service | Stateless API over a replica or warehouse |
 | Real-time scoring | Independent ZeroMQ process | Independently deployed stream consumer |
 
-This separation allows ingestion, reconciliation, exception processing,
+We use this separation so ingestion, reconciliation, exception processing,
 dashboard queries, and real-time scoring to scale independently. Ten ingestion
 workers do not imply ten dashboards or ten databases.
 
-The local REST service uses short-lived read-only DuckDB connections and a
+We use short-lived read-only DuckDB connections and a
 bounded query semaphore. This limits in-process readers but does not turn
 DuckDB into a multi-host database. Scale API replicas against a published
 snapshot, object-storage tables, or a warehouse rather than the live writable

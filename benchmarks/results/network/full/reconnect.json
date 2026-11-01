@@ -1,0 +1,10 @@
+{
+  "configured_backoff_ms": 10.0,
+  "disconnect_after": 5000,
+  "duration_seconds": 1.690288,
+  "events": 10000,
+  "events_lost": 0,
+  "events_per_second": 5916.15,
+  "recovery_ms": 15.129,
+  "sequence_errors": 0
+}
